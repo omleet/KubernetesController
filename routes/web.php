@@ -20,6 +20,8 @@ use App\Http\Middleware\{
 };
 
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\ClusterController;
 
 
 // Rota raiz redirecionando para o login
@@ -92,7 +94,10 @@ Route::middleware('auth')->group(function () {
 
 Route::middleware(['auth'])->group(function () {
     // Dashboard principal
-    Route::view('/dashboard', 'dashboard')->name('dashboard');
+    Route::controller(DashboardController::class)->group(function () {
+        Route::get('/dashboard','dashboard')->name("dashboard");
+    });
+
     Route::view('/about', 'about.index')->name('about');
 
     // Perfil do usuário
@@ -108,6 +113,12 @@ Route::middleware(['auth'])->group(function () {
         Route::put('/User/{User}', 'update')->name("User.update")->middleware(EditUserMiddleware::class);
         Route::patch('/User/{User}/password', 'updatePassword')->name("User.updatePassword")->middleware(EditUserMiddleware::class);
         Route::resource('/User', UserController::class)->except(['index', 'edit', 'update'])->middleware(AdminMiddleware::class);
+    });
+
+
+       Route::controller(ClusterController::class)->group(function () {
+        Route::resource('/Clusters',ClusterController::class);
+        Route::get('/Clusters/selectCluster/{device}','selectCluster')->name('Clusters.selectCluster');
     });
 
     
