@@ -6,12 +6,13 @@
         <meta name="csrf-token" content="{{ csrf_token() }}">
 
          <!--<title>{{ config('app.name', 'Laravel') }}</title>-->
-        <title>Controlador SDN</title>
+        <title>Kubernetes</title>
 
         <!-- Fonts -->
         <link rel="preconnect" href="https://fonts.bunny.net">
         <link href="https://fonts.bunny.net/css?family=figtree:400,500,600&display=swap" rel="stylesheet" />
-        <link rel="icon" type="image/svg+xml" href="{{ asset('newlogo.svg') }}">
+        <link rel="icon" type="image/png" href="{{ asset('newlogo.png') }}">
+
 
         <!-- Scripts -->
         @vite(['resources/css/app.css', 'resources/js/app.js'])
@@ -20,7 +21,7 @@
         <div class="min-h-screen flex flex-col sm:justify-center items-center pt-6 sm:pt-0 bg-gray-100">
             <div>
                 <a href="/">
-                <img src="{{ asset('newlogo2.svg') }}" class="w-50 h-20 mx-auto" alt="Logo">
+                <img src="{{ asset('newlogo2.png') }}" class="w-50 h-40 mx-auto" alt="Logo">
                 </a>
             </div>
 
