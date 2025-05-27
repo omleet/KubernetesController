@@ -38,7 +38,7 @@ class DatabaseSeeder extends Seeder
         DB::table('clusters')->insert([
             'name' => 'DefaultCluster',
             'user_id' => 1,
-            'endpoint' => 'https://172.29.176.1:16443', 
+            'endpoint' => 'http://172.29.176.1:8001', 
             'auth_type' => 'P',
             'timeout' => 5,
         ]);

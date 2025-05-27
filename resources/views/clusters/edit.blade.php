@@ -1,17 +1,18 @@
 <x-app-layout>
-        <x-slot name="header">
+    <x-slot name="header">
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-    <div>
-        <h2 class="text-2xl font-bold text-gray-900">
-            {{ __('Update Cluster') }}
-        </h2>
-        <p class="text-sm text-gray-500 mt-1">
-            Update this Cluster
-        </p>
-    </div>
-</div>
+            <div>
+                <h2 class="text-2xl font-bold text-gray-900">
+                    {{ __('Update Cluster') }}
+                </h2>
+                <p class="text-sm text-gray-500 mt-1">
+                    Update this Cluster
+                </p>
+            </div>
+        </div>
     </x-slot>
-    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8" x-data="{ authType: '{{ old('auth_type', $cluster['auth_type']) }}' }">
         
         <!-- Update Cluster Card -->
         <div class="bg-white rounded-xl shadow-lg overflow-hidden mb-6">
@@ -36,7 +37,7 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Name *</label>
                         <div class="mt-1 relative rounded-md shadow-sm">
-                            <input type="text" name="name" class="focus:ring-blue-500 focus:border-blue-500 block w-full px-4 py-2 border border-gray-300 rounded-md @error('name') border-red-500 @enderror" value="{{$cluster['name']}}" placeholder="My Cluster">
+                            <input type="text" name="name" class="focus:ring-blue-500 focus:border-blue-500 block w-full px-4 py-2 border border-gray-300 rounded-md @error('name') border-red-500 @enderror" value="{{ old('name', $cluster['name']) }}" placeholder="My Cluster">
                             @error('name')
                             <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
                                 <svg class="h-5 w-5 text-red-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
@@ -54,7 +55,7 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Endpoint *</label>
                         <div class="mt-1 relative rounded-md shadow-sm">
-                            <input type="text" name="endpoint" class="focus:ring-blue-500 focus:border-blue-500 block w-full px-4 py-2 border border-gray-300 rounded-md @error('endpoint') border-red-500 @enderror" value="{{$cluster['endpoint']}}" placeholder="https://127.0.0.1:6443">
+                            <input type="text" name="endpoint" class="focus:ring-blue-500 focus:border-blue-500 block w-full px-4 py-2 border border-gray-300 rounded-md @error('endpoint') border-red-500 @enderror" value="{{ old('endpoint', $cluster['endpoint']) }}" placeholder="https://172.29.176.1:16443">
                             @error('endpoint')
                             <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
                                 <svg class="h-5 w-5 text-red-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
@@ -70,23 +71,23 @@
 
                     <!-- Auth Type Field -->
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Auth Type *</label>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Authentication Method *</label>
                         <div class="mt-1">
-                            <select class="focus:ring-blue-500 focus:border-blue-500 block w-full px-4 py-2 border border-gray-300 rounded-md" name="auth_type">
-                                <option value="P" {{$cluster['auth_type'] == 'P' ? 'selected' : ''}}>Proxy (No auth)</option>
-                                <option value="T" {{$cluster['auth_type'] == 'T' ? 'selected' : ''}}>Token (Auth)</option>
+                            <select name="auth_type" x-model="authType" class="focus:ring-blue-500 focus:border-blue-500 block w-full px-4 py-2 border border-gray-300 rounded-md @error('auth_type') border-red-500 @enderror">
+                                <option value="P" {{ old('auth_type', $cluster['auth_type']) == 'P' ? 'selected' : '' }}>Proxy (No authentication)</option>
+                                <option value="T" {{ old('auth_type', $cluster['auth_type']) == 'T' ? 'selected' : '' }}>Token (Bearer authentication)</option>
                             </select>
-                            @error('auth_type')
-                            <p class="mt-2 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
                         </div>
+                        @error('auth_type')
+                        <p class="mt-2 text-sm text-red-600">{{ $message }}</p>
+                        @enderror
                     </div>
 
-                    <!-- Token Field -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Token</label>
+                    <!-- Token Field (Conditional) -->
+                    <div x-show="authType === 'T'" x-transition>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Bearer Token</label>
                         <div class="mt-1 relative rounded-md shadow-sm">
-                            <input type="text" name="token" class="focus:ring-blue-500 focus:border-blue-500 block w-full px-4 py-2 border border-gray-300 rounded-md @error('token') border-red-500 @enderror" value="{{$cluster['token']}}">
+                            <textarea name="token" rows="3" class="focus:ring-blue-500 focus:border-blue-500 block w-full px-4 py-2 border border-gray-300 rounded-md @error('token') border-red-500 @enderror" placeholder="Paste your token here">{{ old('token') }}</textarea>
                             @error('token')
                             <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
                                 <svg class="h-5 w-5 text-red-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
@@ -95,6 +96,9 @@
                             </div>
                             @enderror
                         </div>
+                        <p class="mt-2 text-sm text-gray-500">
+                            For security reasons, the token will be encrypted when stored.
+                        </p>
                         @error('token')
                         <p class="mt-2 text-sm text-red-600">{{ $message }}</p>
                         @enderror
@@ -104,7 +108,7 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Timeout</label>
                         <div class="mt-1 relative rounded-md shadow-sm">
-                            <input type="text" name="timeout" class="focus:ring-blue-500 focus:border-blue-500 block w-full px-4 py-2 border border-gray-300 rounded-md @error('timeout') border-red-500 @enderror" value="{{$cluster['timeout']}}" placeholder="5">
+                            <input type="text" name="timeout" class="focus:ring-blue-500 focus:border-blue-500 block w-full px-4 py-2 border border-gray-300 rounded-md @error('timeout') border-red-500 @enderror" value="{{ old('timeout', $cluster['timeout']) }}" placeholder="5">
                             @error('timeout')
                             <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
                                 <svg class="h-5 w-5 text-red-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
@@ -120,6 +124,9 @@
 
                     <!-- Form Actions -->
                     <div class="flex items-center justify-end space-x-3 pt-4 border-t border-gray-200">
+                        <a href="{{ url()->previous() }}" class="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                            Cancel
+                        </a>
                         <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
                             <svg class="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
                                 <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
@@ -153,4 +160,7 @@
             </div>
         </div>
     </div>
+
+    <!-- Alpine.js for conditional fields -->
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
 </x-app-layout>
