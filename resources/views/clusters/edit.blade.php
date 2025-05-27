@@ -134,7 +134,7 @@
         <!-- Delete Cluster Card -->
         <div class="bg-white rounded-xl shadow-lg overflow-hidden">
             <div class="bg-gradient-to-r from-red-600 to-red-800 px-6 py-4">
-                <h2 class="text-2xl font-bold text-white">Danger Zone</h2>
+                <h2 class="text-2xl font-bold text-white">Delete</h2>
             </div>
             <div class="p-6">
                 <form method="POST" action="{{route ('Clusters.destroy',$cluster['id'])}}" enctype="multipart/form-data">

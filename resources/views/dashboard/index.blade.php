@@ -81,7 +81,7 @@
                                     <div class="flex justify-between items-center" title="Tipo de nó no cluster">
                                         <span class="font-medium">Tipo:</span>
                                         <span class="text-xs font-semibold {{ $node['master'] ? 'text-gray-800' : 'text-gray-600' }}">
-                                            {{ $node['master'] ? 'Control Plane' : 'Worker' }}
+                                            {{ $node['master'] ? 'Central Control Plane' : 'Worker' }}
                                         </span>
                                     </div>
                                 </div>
