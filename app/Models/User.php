@@ -23,6 +23,8 @@ class User extends Authenticatable
         'email',
         'password',
         'admin',
+        'resources',
+        'verbs'
     ];
 
     /**
@@ -48,8 +50,8 @@ class User extends Authenticatable
         ];
     }
 
-    public function devices(): HasMany
+    public function clusters(): HasMany
     {
-        return $this->hasMany(Device::class, 'user_id', 'id');
+        return $this->hasMany(Cluster::class, 'user_id', 'id');
     }
 }

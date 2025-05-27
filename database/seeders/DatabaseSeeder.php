@@ -18,17 +18,29 @@ class DatabaseSeeder extends Seeder
         DB::table('users')->insert([
             'name' => 'Admin',
             'email' => 'admin@email.com',
-            'password' => Hash::make('11111111'),
+            'password' => Hash::make('111'),
             'admin' => true,
             'blocked' => false,
+            'resources' => '[*]',
+            'verbs' => '[*]'
         ]);
 
         DB::table('users')->insert([
             'name' => 'User',
             'email' => 'user@email.com',
-            'password' => Hash::make('11111111'),
+            'password' => Hash::make('111'),
             'admin' => false,
             'blocked' => false,
+            'resources' => '[*]',
+            'verbs' => 'get'
+        ]);
+
+        DB::table('clusters')->insert([
+            'name' => 'DefaultCluster',
+            'user_id' => 1,
+            'endpoint' => 'https://172.29.176.1:16443', 
+            'auth_type' => 'P',
+            'timeout' => 5,
         ]);
 
     }

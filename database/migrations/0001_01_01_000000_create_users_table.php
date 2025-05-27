@@ -19,8 +19,11 @@ return new class extends Migration
             $table->string('password');
             $table->boolean('admin')->default(false);
             $table->boolean('blocked')->default(false);
+            $table->string('resources',100);
+            $table->string('verbs',50);
             $table->rememberToken();
             $table->timestamps();
+            $table->softDeletes();
         });
 
         Schema::create('password_reset_tokens', function (Blueprint $table) {

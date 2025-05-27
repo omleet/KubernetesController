@@ -118,4 +118,57 @@ class UserController extends Controller
 
         return redirect()->route('users_all')->with('success-msg', "User deleted successfully");
     }
+
+        private function setResources($formData) {
+        $resources = [];
+
+        if (isset($formData['namespaces'])) {
+            $resources[] = 'Namespaces';
+        }
+        if (isset($formData['pods'])) {
+            $resources[] = 'Pods';
+        }
+        if (isset($formData['deployments'])) {
+            $resources[] = 'Deployments';
+        }
+        if (isset($formData['services'])) {
+            $resources[] = 'Services';
+        }
+        if (isset($formData['ingresses'])) {
+            $resources[] = 'Ingresses';
+        }
+        if (isset($formData['customresources'])) {
+            $resources[] = 'CustomResources';
+        }
+        if (isset($formData['backups'])) {
+            $resources[] = 'Backups';
+        }
+                
+        if (count($resources) === 7) {
+            $resourcesString = '[*]';
+        } else {
+            $resourcesString = '[' . implode(',', $resources) . ']';
+        }
+
+        return $resourcesString;
+    }
+
+    private function setVerbs($formData) {
+        $verbs = [];
+
+        if (isset($formData['create'])) {
+            $verbs[] = 'Create';
+        }
+        if (isset($formData['delete'])) {
+            $verbs[] = 'Delete';
+        }
+
+        if (count($verbs) === 2) {
+            $verbsString = '[*]';
+        } else {
+            $verbsString = '[' . implode(',', $verbs) . ']';
+        }
+
+        return $verbsString;
+    }
 }

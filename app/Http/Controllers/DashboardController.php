@@ -66,7 +66,7 @@ class DashboardController extends Controller
 
     public function index(Request $request): View
     {
-        $events = $this->getEvents();
+        $events = $this->getEvents($request);
         $nodes = $this->getNodeInfo();
         $resources = $this->getTotalResources();
 
@@ -87,40 +87,60 @@ class DashboardController extends Controller
             ]);
 
             $response = $client->get("/api/v1/nodes");
-
             $jsonData = json_decode($response->getBody(), true);
 
             $nodes = [];
-            foreach ($jsonData['items'] as $jsonData) {
-                $data['name'] =  $jsonData['metadata']['labels']['kubernetes.io/hostname'];
-                $data['master'] = isset($jsonData['metadata']['labels']['node-role.kubernetes.io/master']) ? true : false;
-                $data['os'] =  $jsonData['status']['nodeInfo']['osImage'];
-                foreach ($jsonData['status']['addresses'] as $address) {
-                    if ($address['type'] == 'InternalIP') {
+            foreach ($jsonData['items'] as $nodeData) {
+                $data = [];
+
+                // Nome do node
+                $data['name'] = $nodeData['metadata']['name'] ??
+                    ($nodeData['metadata']['labels']['kubernetes.io/hostname'] ?? 'Unknown');
+
+                // Verifica se é master
+                $data['master'] = isset($nodeData['metadata']['labels']['node-role.kubernetes.io/master']) ||
+                    isset($nodeData['metadata']['labels']['node.kubernetes.io/microk8s-controlplane']);
+
+                // Sistema operacional
+                $data['os'] = $nodeData['status']['nodeInfo']['osImage'] ?? 'Unknown OS';
+
+                // IP do node
+                $data['ip'] = 'Unknown IP';
+                foreach ($nodeData['status']['addresses'] ?? [] as $address) {
+                    if ($address['type'] === 'InternalIP') {
                         $data['ip'] = $address['address'];
                         break;
-                    } else {
-                        $data['ip'] = null;
                     }
                 }
-                $data['podCidr'] = $jsonData['spec']['podCIDR'];
-                $data['cpus'] =  $jsonData['status']['capacity']['cpu'];
-                $data['arch'] =  $jsonData['metadata']['labels']['beta.kubernetes.io/arch'];
-                $data['memory'] =  $jsonData['status']['capacity']['memory'];
-                $data['memory'] = intval(str_replace('Ki', '', $data['memory']));
-                $data['memory'] = round($data['memory'] / 1000000);
 
-                if (isset($jsonData['status']['conditions'])) {
-                    foreach ($jsonData['status']['conditions'] as $status) {
-                        if ($status['type'] == 'Ready')
-                            $data['status'] = $status['status'];
+                // CIDR dos pods
+                $data['podCidr'] = $nodeData['spec']['podCIDRs'][0] ?? 'Not assigned';
+
+                // CPUs
+                $data['cpus'] = $nodeData['status']['capacity']['cpu'] ?? '?';
+
+                // Arquitetura
+                $data['arch'] = ($nodeData['metadata']['labels']['kubernetes.io/arch'] ??
+                    ($nodeData['metadata']['labels']['beta.kubernetes.io/arch'] ?? 'unknown')) .
+                    ' (' . ($nodeData['metadata']['labels']['kubernetes.io/os'] ?? 'linux') . ')';
+
+                // Memória (convertendo para GB)
+                $memory = $nodeData['status']['capacity']['memory'] ?? '0Ki';
+                $data['memory'] = round((int)str_replace(['Ki', 'K'], '', $memory) / 1024 / 1024, 1); // Convertendo para GB
+
+                // Status
+                $data['status'] = 'False';
+                foreach ($nodeData['status']['conditions'] ?? [] as $condition) {
+                    if ($condition['type'] === 'Ready') {
+                        $data['status'] = $condition['status'];
+                        break;
                     }
                 }
 
                 $nodes[] = $data;
             }
 
-            return array_reverse($nodes);
+            return $nodes;
         } catch (\Exception $e) {
             return null;
         }
@@ -165,7 +185,7 @@ class DashboardController extends Controller
         }
     }
 
-    private function getEvents()
+    private function getEvents(Request $request)
     {
         try {
             $client = new Client([
@@ -181,25 +201,46 @@ class DashboardController extends Controller
             $response = $client->get("/api/v1/events");
             $jsonData = json_decode($response->getBody(), true);
 
-            $events = [];
-            foreach ($jsonData['items'] as $jsonData) {
+            $allEvents = [];
+            foreach ($jsonData['items'] as $eventData) {
                 try {
-                    $data['kind'] =  $jsonData['involvedObject']['kind'];
-                    $data['name'] =  $jsonData['involvedObject']['name'];
-                    $data['namespace'] =  isset($jsonData['involvedObject']['namespace']) ? $jsonData['involvedObject']['namespace'] : '-';
-                    $data['type'] =  $jsonData['type'];
-                    $data['time'] =  $jsonData['eventTime'];
-                    $data['startTime'] =  $jsonData['firstTimestamp'];
-                    $data['endTime'] =  $jsonData['lastTimestamp'];
-                    $data['message'] =  isset($jsonData['message']) ? $jsonData['message'] : '-';
-                    $events[] = $data;
+                    $allEvents[] = [
+                        'kind' => $eventData['involvedObject']['kind'] ?? 'Unknown',
+                        'name' => $eventData['involvedObject']['name'] ?? 'Unknown',
+                        'namespace' => $eventData['involvedObject']['namespace'] ?? '-',
+                        'type' => $eventData['type'] ?? 'Unknown',
+                        'time' => $eventData['eventTime'] ?? null,
+                        'startTime' => $eventData['firstTimestamp'] ?? null,
+                        'endTime' => $eventData['lastTimestamp'] ?? null,
+                        'message' => $eventData['message'] ?? '-'
+                    ];
                 } catch (\Throwable $th) {
-                    $events[] = null;
+                    continue;
                 }
             }
 
-            return $events;
+            // Ordenar eventos pelos mais recentes primeiro
+            usort($allEvents, function ($a, $b) {
+                $timeA = $a['time'] ?? $a['startTime'] ?? '';
+                $timeB = $b['time'] ?? $b['startTime'] ?? '';
+                return strtotime($timeB) - strtotime($timeA);
+            });
+
+            // Paginação manual
+            $page = $request->get('page', 1);
+            $perPage = 10;
+            $offset = ($page - 1) * $perPage;
+            $paginatedEvents = array_slice($allEvents, $offset, $perPage);
+
+            return [
+                'data' => $paginatedEvents,
+                'total' => count($allEvents),
+                'per_page' => $perPage,
+                'current_page' => $page,
+                'last_page' => ceil(count($allEvents) / $perPage)
+            ];
         } catch (\Exception $e) {
+           
             return null;
         }
     }
