@@ -20,7 +20,7 @@ class ClusterConnectionException extends Exception
 
         session()->forget('clusterId');
         session()->forget('clusterName');
-        $redirect = redirect()->route('clusters.index')->with('error_msg', $errormsg);
+        $redirect = redirect()->route('Clusters.index')->with('error_msg', $errormsg);
 
         return response($redirect, 302);
     }

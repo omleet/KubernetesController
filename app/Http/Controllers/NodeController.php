@@ -104,7 +104,9 @@ class NodeController extends Controller
                     'unknown';
 
                 // CIDR dos pods
-                $data['podCidr'] = $nodeData['spec']['podCIDRs'][0] ?? 'Not assigned';
+                $data['podCIDRs'] = $nodeData['spec']['podCIDRs'] ??
+                    (isset($nodeData['spec']['podCIDR']) ? [$nodeData['spec']['podCIDR']] : ['Not assigned']);
+
 
                 // Status (Ready)
                 $data['status'] = 'False';
