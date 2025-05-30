@@ -111,13 +111,51 @@
                                     </svg>
                                     Reset
                                 </button>
-                                <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-150">
+                                <button type="submit" id="submitBtn" class="inline-flex items-center px-4 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-150">
                                     <svg class="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                                     </svg>
                                     Create Resource
                                 </button>
                             </div>
+
+                            <script>
+                                function prettyPrint() {
+                                    const textarea = document.getElementById('resource');
+                                    try {
+                                        const jsonText = textarea.value.trim();
+                                        if (jsonText) {
+                                            const json = JSON.parse(jsonText);
+                                            textarea.value = JSON.stringify(json, null, 2);
+                                        }
+                                    } catch (e) {
+                                        // If JSON is invalid, show an error message
+                                        alert('Invalid JSON format: ' + e.message);
+                                    }
+                                }
+
+                                function resetForm() {
+                                    document.getElementById('resource').value = '';
+                                    loadTemplate('pod');
+                                }
+                            </script>
+
+                            <!-- Error message display -->
+                            @if(session('error_msg'))
+                            <div class="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                                <h3 class="text-sm font-medium mb-2">Error:</h3>
+                                <p class="text-sm">{{ session('error_msg')['message'] ?? 'An unknown error occurred' }}</p>
+                                @if(isset(session('error_msg')['status']) && isset(session('error_msg')['code']))
+                                <p class="text-xs mt-1 text-red-500">{{ session('error_msg')['status'] }} ({{ session('error_msg')['code'] }})</p>
+                                @endif
+                            </div>
+                            @endif
+
+                            @if(session('success-msg'))
+                            <div class="mt-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
+                                <p class="text-sm">{{ session('success-msg') }}</p>
+                            </div>
+                            @endif
                         </form>
                     </div>
                 </div>
@@ -180,6 +218,36 @@
                                     </div>
                                 </div>
                             </button>
+
+                            <button type="button" onclick="loadTemplate('namespace')" class="w-full text-left px-4 py-3 border border-gray-200 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-150">
+                                <div class="flex items-center">
+                                    <div class="bg-green-100 rounded-full p-2 mr-3">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10" />
+                                        </svg>
+                                    </div>
+                                    <div>
+                                        <div class="font-medium text-gray-900">Namespace</div>
+                                        <div class="text-xs text-gray-500">Basic namespace</div>
+                                    </div>
+                                </div>
+                            </button>
+
+                            <button type="button" onclick="loadTemplate('ingress')" class="w-full text-left px-4 py-3 border border-gray-200 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-150">
+                                <div class="flex items-center">
+                                    <div class="bg-green-100 rounded-full p-2 mr-3">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10" />
+                                        </svg>
+                                    </div>
+                                    <div>
+                                        <div class="font-medium text-gray-900">Ingress</div>
+                                        <div class="text-xs text-gray-500">Basic ingress</div>
+                                    </div>
+                                </div>
+                            </button>
+
+
 
                             <button type="button" onclick="loadTemplate('deployment')" class="w-full text-left px-4 py-3 border border-gray-200 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-150">
                                 <div class="flex items-center">
@@ -258,6 +326,7 @@
   "kind": "Pod",
   "metadata": {
     "name": "example-pod",
+    "namespace": "default",
     "labels": {
       "app": "example"
     }
@@ -288,62 +357,104 @@
 }`;
             } else if (type === 'deployment') {
                 template = `{
-  "apiVersion": "apps/v1",
-  "kind": "Deployment",
-  "metadata": {
-    "name": "example-deployment",
-    "labels": {
-      "app": "example"
-    }
-  },
-  "spec": {
-    "replicas": 3,
-    "selector": {
-      "matchLabels": {
-        "app": "example"
-      }
-    },
-    "template": {
-      "metadata": {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+        "name": "example-deployment",
         "labels": {
-          "app": "example"
+            "app": "example"
+        },
+        "namespace": "default"
+    },
+    "spec": {
+        "replicas": 3,
+        "selector": {
+            "matchLabels": {
+                "app": "example"
+            }
+        },
+        "template": {
+            "metadata": {
+                "labels": {
+                    "app": "example"
+                }
+            },
+            "spec": {
+                "containers": [
+                    {
+                        "name": "nginx",
+                        "image": "nginx:1.14.2",
+                        "ports": [
+                            {
+                                "containerPort": 80
+                            }
+                        ]
+                    }
+                ]
+            }
         }
-      },
-      "spec": {
-        "containers": [
-          {
-            "name": "nginx",
-            "image": "nginx:1.14.2",
-            "ports": [
-              {
-                "containerPort": 80
-              }
-            ]
-          }
-        ]
-      }
     }
-  }
 }`;
             } else if (type === 'service') {
                 template = `{
-  "apiVersion": "v1",
-  "kind": "Service",
-  "metadata": {
-    "name": "example-service"
-  },
-  "spec": {
-    "selector": {
-      "app": "example"
+    "apiVersion": "v1",
+    "kind": "Service",
+    "metadata": {
+        "name": "example-service",
+        "namespace": "default"
     },
-    "ports": [
-      {
-        "port": 80,
-        "targetPort": 80
-      }
-    ],
-    "type": "ClusterIP"
-  }
+    "spec": {
+        "selector": {
+            "app": "example"
+        },
+        "ports": [
+            {
+                "port": 80,
+                "targetPort": 80
+            }
+        ],
+        "type": "ClusterIP"
+    }
+}`;
+            } else if (type === 'ingress') {
+                template = `{
+    "apiVersion": "networking.k8s.io/v1",
+    "kind": "Ingress",
+    "metadata": {
+        "name": "example-ingress",
+        "namespace": "default"
+    },
+    "spec": {
+        "ingressClassName": "public",
+        "rules": [
+            {
+                "http": {
+                    "paths": [
+                        {
+                            "path": "/api",
+                            "pathType": "Prefix",
+                            "backend": {
+                                "service": {
+                                    "name": "my-service",
+                                    "port": {
+                                        "number": 80
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+}`;
+            } else if (type === 'namespace') {
+                template = `{
+    "apiVersion": "v1",
+    "kind": "Namespace",
+    "metadata": {
+        "name": "example-namespace"
+    }
 }`;
             }
 
@@ -356,6 +467,41 @@
             const textarea = document.getElementById('resource');
             if (!textarea.value.trim()) {
                 loadTemplate('pod');
+            }
+
+            // Prevent double form submission
+            const form = document.querySelector('form');
+            const submitBtn = document.getElementById('submitBtn');
+
+            if (form && submitBtn) {
+                form.addEventListener('submit', function(e) {
+                    // Validate JSON before submission
+                    try {
+                        const jsonContent = textarea.value.trim();
+                        if (!jsonContent) {
+                            e.preventDefault();
+                            alert('Please enter a valid JSON resource definition.');
+                            return;
+                        }
+
+                        // Try to parse the JSON to validate it
+                        JSON.parse(jsonContent);
+
+                        // Disable the submit button to prevent double submission
+                        submitBtn.disabled = true;
+                        submitBtn.classList.add('opacity-75', 'cursor-not-allowed');
+                        submitBtn.innerHTML = `
+                            <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Creating...
+                        `;
+                    } catch (error) {
+                        e.preventDefault();
+                        alert('Invalid JSON format: ' + error.message);
+                    }
+                });
             }
         });
     </script>

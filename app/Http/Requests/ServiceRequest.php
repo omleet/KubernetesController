@@ -87,10 +87,9 @@ class ServiceRequest extends FormRequest
                 'numeric'
             ],
             'nodePort' => [
-                'required_if:type,Auto,NodePort,LoadBalancer,ExternalName',
+                'nullable',
             ],
             'nodePort.*' => [
-                'required_if:type,Auto,NodePort,LoadBalancer,ExternalName',
                 'nullable',
                 'numeric',
                 'between:30000,32767'

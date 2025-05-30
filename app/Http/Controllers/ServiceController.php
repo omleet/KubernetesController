@@ -208,17 +208,21 @@ class ServiceController extends Controller
 
             // PORTS
             $data['spec']['ports'] = [];
-            if (isset($formData['portName']) && isset($formData['protocol']) && isset($formData['port']) && isset($formData['target']) && isset($formData['nodePort'])) {
-                $arr_port = [];
+            if (isset($formData['portName']) && isset($formData['protocol']) && isset($formData['port']) && isset($formData['target'])) {
                 foreach ($formData['portName'] as $key => $port) {
+                    $arr_port = [];
                     $arr_port['name'] = $formData['portName'][$key];
                     $arr_port['protocol'] = $formData['protocol'][$key];
                     $arr_port['port'] = intval($formData['port'][$key]);
                     $arr_port['targetPort'] = intval($formData['target'][$key]);
-                    if ($formData['protocol'] != 'ClusterIP')
+                    
+                    // Only add nodePort if it's provided and the service type requires it
+                    if (isset($formData['nodePort'][$key]) && !empty($formData['nodePort'][$key]) && 
+                        isset($formData['type']) && in_array($formData['type'], ['NodePort', 'LoadBalancer'])) {
                         $arr_port['nodePort'] = intval($formData['nodePort'][$key]);
+                    }
 
-                    array_push($data['spec']['ports'],$arr_port);
+                    array_push($data['spec']['ports'], $arr_port);
                 }
             }
             

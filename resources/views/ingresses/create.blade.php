@@ -158,7 +158,7 @@
                             <span class="flex-shrink-0 bg-indigo-100 text-indigo-700 rounded-full h-6 w-6 flex items-center justify-center mr-2">
                                 <span class="text-sm font-semibold">3</span>
                             </span>
-                            Routing Rules
+                            Routing Rules <span class="text-red-500">*</span>
                         </h3>
                         
                         <div class="mb-4">
