@@ -69,8 +69,20 @@ class DashboardController extends Controller
         $events = $this->getEvents($request);
         $nodes = $this->getNodeInfo();
         $resources = $this->getTotalResources();
+        $clusterInfo = $this->getClusterInfo();
+        $persistentVolumes = $this->getPersistentVolumes();
+        $resourceUsage = $this->getResourceUsage();
+        $ingresses = $this->getIngressInfo();
 
-        return view('dashboard.index', ['events' => $events, 'nodes' => $nodes, 'resources' => $resources]);
+        return view('dashboard.index', [
+            'events' => $events, 
+            'nodes' => $nodes, 
+            'resources' => $resources,
+            'clusterInfo' => $clusterInfo,
+            'persistentVolumes' => $persistentVolumes,
+            'resourceUsage' => $resourceUsage,
+            'ingresses' => $ingresses
+        ]);
     }
 
     private function getNodeInfo()
@@ -182,6 +194,242 @@ class DashboardController extends Controller
             return $totalResources;
         } catch (\Exception $e) {
             return null;
+        }
+    }
+    
+    private function getIngressInfo()
+    {
+        try {
+            $client = new Client([
+                'base_uri' => $this->endpoint,
+                'headers' => [
+                    'Authorization' => $this->token,
+                    'Accept' => 'application/json',
+                ],
+                'verify' => false,
+                'timeout' => $this->timeout
+            ]);
+
+            $response = $client->get("/apis/networking.k8s.io/v1/ingresses");
+            $jsonData = json_decode($response->getBody(), true);
+
+            $ingresses = [];
+            foreach ($jsonData['items'] as $ingressData) {
+                $hosts = [];
+                $paths = [];
+                
+                // Extract hosts and paths
+                if (isset($ingressData['spec']['rules'])) {
+                    foreach ($ingressData['spec']['rules'] as $rule) {
+                        if (isset($rule['host'])) {
+                            $hosts[] = $rule['host'];
+                        }
+                        
+                        if (isset($rule['http']['paths'])) {
+                            foreach ($rule['http']['paths'] as $path) {
+                                $serviceName = $path['backend']['service']['name'] ?? 'unknown';
+                                $servicePort = $path['backend']['service']['port']['number'] ?? 'unknown';
+                                $pathType = $path['pathType'] ?? 'Prefix';
+                                $pathValue = $path['path'] ?? '/';
+                                
+                                $paths[] = [
+                                    'path' => $pathValue,
+                                    'pathType' => $pathType,
+                                    'serviceName' => $serviceName,
+                                    'servicePort' => $servicePort
+                                ];
+                            }
+                        }
+                    }
+                }
+                
+                // Get TLS info
+                $tls = false;
+                $tlsSecrets = [];
+                if (isset($ingressData['spec']['tls']) && !empty($ingressData['spec']['tls'])) {
+                    $tls = true;
+                    foreach ($ingressData['spec']['tls'] as $tlsConfig) {
+                        if (isset($tlsConfig['secretName'])) {
+                            $tlsSecrets[] = $tlsConfig['secretName'];
+                        }
+                    }
+                }
+                
+                $ingresses[] = [
+                    'name' => $ingressData['metadata']['name'] ?? 'Unknown',
+                    'namespace' => $ingressData['metadata']['namespace'] ?? 'default',
+                    'hosts' => $hosts,
+                    'paths' => $paths,
+                    'tls' => $tls,
+                    'tlsSecrets' => $tlsSecrets,
+                    'creationTimestamp' => $ingressData['metadata']['creationTimestamp'] ?? 'Unknown',
+                    'className' => $ingressData['spec']['ingressClassName'] ?? 'default'
+                ];
+            }
+
+            return $ingresses;
+        } catch (\Exception $e) {
+            return [];
+        }
+    }
+
+    private function getClusterInfo()
+    {
+        try {
+            $client = new Client([
+                'base_uri' => $this->endpoint,
+                'headers' => [
+                    'Authorization' => $this->token,
+                    'Accept' => 'application/json',
+                ],
+                'verify' => false,
+                'timeout' => $this->timeout
+            ]);
+
+            $response = $client->get("/version");
+            $versionData = json_decode($response->getBody(), true);
+
+            // Get cluster name from current context
+            $configResponse = $client->get("/api/v1/namespaces/kube-system/configmaps/kubeadm-config");
+            $configData = json_decode($configResponse->getBody(), true);
+            $clusterName = $configData['data']['ClusterConfiguration'] ?? '';
+            
+            // Extract cluster name using regex if available
+            $clusterNameMatch = [];
+            preg_match('/clusterName:\s*([^\s]+)/', $clusterName, $clusterNameMatch);
+            $clusterName = $clusterNameMatch[1] ?? 'Kubernetes Cluster';
+
+            return [
+                'version' => $versionData['gitVersion'] ?? 'Unknown',
+                'buildDate' => $versionData['buildDate'] ?? 'Unknown',
+                'platform' => $versionData['platform'] ?? 'Unknown',
+                'goVersion' => $versionData['goVersion'] ?? 'Unknown',
+                'name' => $clusterName
+            ];
+        } catch (\Exception $e) {
+            // Fallback to basic version info if detailed info fails
+            try {
+                $client = new Client([
+                    'base_uri' => $this->endpoint,
+                    'headers' => [
+                        'Authorization' => $this->token,
+                        'Accept' => 'application/json',
+                    ],
+                    'verify' => false,
+                    'timeout' => $this->timeout
+                ]);
+
+                $response = $client->get("/version");
+                $versionData = json_decode($response->getBody(), true);
+
+                return [
+                    'version' => $versionData['gitVersion'] ?? 'Unknown',
+                    'buildDate' => $versionData['buildDate'] ?? 'Unknown',
+                    'platform' => $versionData['platform'] ?? 'Unknown',
+                    'goVersion' => $versionData['goVersion'] ?? 'Unknown',
+                    'name' => 'Kubernetes Cluster'
+                ];
+            } catch (\Exception $e) {
+                return [
+                    'version' => 'Unknown',
+                    'buildDate' => 'Unknown',
+                    'platform' => 'Unknown',
+                    'goVersion' => 'Unknown',
+                    'name' => 'Kubernetes Cluster'
+                ];
+            }
+        }
+    }
+
+    private function getPersistentVolumes()
+    {
+        try {
+            $client = new Client([
+                'base_uri' => $this->endpoint,
+                'headers' => [
+                    'Authorization' => $this->token,
+                    'Accept' => 'application/json',
+                ],
+                'verify' => false,
+                'timeout' => $this->timeout
+            ]);
+
+            $response = $client->get("/api/v1/persistentvolumes");
+            $jsonData = json_decode($response->getBody(), true);
+
+            $volumes = [];
+            foreach ($jsonData['items'] as $volumeData) {
+                $volumes[] = [
+                    'name' => $volumeData['metadata']['name'] ?? 'Unknown',
+                    'capacity' => $volumeData['spec']['capacity']['storage'] ?? 'Unknown',
+                    'accessModes' => $volumeData['spec']['accessModes'] ?? [],
+                    'status' => $volumeData['status']['phase'] ?? 'Unknown',
+                    'storageClass' => $volumeData['spec']['storageClassName'] ?? 'standard',
+                    'claim' => isset($volumeData['spec']['claimRef']) ? 
+                        ($volumeData['spec']['claimRef']['namespace'] . '/' . $volumeData['spec']['claimRef']['name']) : 'None'
+                ];
+            }
+
+            return $volumes;
+        } catch (\Exception $e) {
+            return [];
+        }
+    }
+
+    private function getResourceUsage()
+    {
+        try {
+            $client = new Client([
+                'base_uri' => $this->endpoint,
+                'headers' => [
+                    'Authorization' => $this->token,
+                    'Accept' => 'application/json',
+                ],
+                'verify' => false,
+                'timeout' => $this->timeout
+            ]);
+
+            // Get metrics API if available
+            try {
+                $metricsResponse = $client->get("/apis/metrics.k8s.io/v1beta1/nodes");
+                $metricsData = json_decode($metricsResponse->getBody(), true);
+                
+                $nodeMetrics = [];
+                foreach ($metricsData['items'] as $nodeMetric) {
+                    $nodeName = $nodeMetric['metadata']['name'];
+                    $cpuUsage = $nodeMetric['usage']['cpu'];
+                    $memoryUsage = $nodeMetric['usage']['memory'];
+                    
+                    // Convert CPU usage from nanocores to cores
+                    $cpuUsage = str_replace('n', '', $cpuUsage);
+                    $cpuUsage = (float)$cpuUsage / 1000000000;
+                    
+                    // Convert memory usage to MB
+                    $memoryUsage = str_replace('Ki', '', $memoryUsage);
+                    $memoryUsage = (int)$memoryUsage / 1024;
+                    
+                    $nodeMetrics[$nodeName] = [
+                        'cpuUsage' => round($cpuUsage, 2),
+                        'memoryUsage' => round($memoryUsage, 0)
+                    ];
+                }
+                
+                return [
+                    'hasMetrics' => true,
+                    'nodeMetrics' => $nodeMetrics
+                ];
+            } catch (\Exception $e) {
+                // Metrics API not available
+                return [
+                    'hasMetrics' => false,
+                    'nodeMetrics' => []
+                ];
+            }
+        } catch (\Exception $e) {
+            return [
+                'hasMetrics' => false,
+                'nodeMetrics' => []
+            ];
         }
     }
 

@@ -91,7 +91,7 @@
                             @if(Auth::user()->resources === '[*]' || str_contains(Auth::user()->resources, 'Backups'))
                             <div class="py-1">
                                 <a href="{{ route('Backups.index') }}"
-                                    class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">{{ __('Backups') }}</a>
+                                    class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">{{ __('Export') }}</a>
                             </div>
                             @endif
                         </div>
@@ -220,7 +220,7 @@
                     @endif
                     @if(Auth::user()->resources === '[*]' || str_contains(Auth::user()->resources, 'Backups'))
                     <x-responsive-nav-link :href="route('Backups.index')" @click="isOpen = false">
-                        {{ __('Backups') }}
+                        {{ __('Export') }}
                     </x-responsive-nav-link>
                     @endif
                 </div>

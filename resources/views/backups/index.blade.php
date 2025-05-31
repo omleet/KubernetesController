@@ -2,10 +2,10 @@
     <x-slot name="header">
         <div class="flex flex-col">
             <h2 class="text-2xl font-bold text-gray-900">
-                Create a new Backup
+                Export your Data
             </h2>
             <p class="mt-1 text-sm text-gray-500">
-                Configure a new Backup
+                Configure your Data to Export
             </p>
         </div>
     </x-slot>
@@ -16,8 +16,8 @@
                 <div class="px-6 py-8 md:px-10 md:py-10 text-white">
                     <div class="flex flex-col md:flex-row justify-between items-center">
                         <div>
-                            <h2 class="text-2xl font-bold">Create a Backup</h2>
-                            <p class="mt-2 text-indigo-100"> Create a new Backup and select which resources you want to include.</p>
+                            <h2 class="text-2xl font-bold">Export your Data</h2>
+                            <p class="mt-2 text-indigo-100"> Select the Data that you want to Export</p>
                         </div>
                         <div class="mt-4 md:mt-0 flex space-x-2">
                         </div>
