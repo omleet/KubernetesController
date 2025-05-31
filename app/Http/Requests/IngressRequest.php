@@ -7,6 +7,31 @@ use Illuminate\Foundation\Http\FormRequest;
 class IngressRequest extends FormRequest
 {
     /**
+     * Kubernetes naming pattern for resources
+     */
+    private const K8S_NAME_PATTERN = '/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/';
+    
+    /**
+     * Kubernetes label key pattern
+     */
+    private const K8S_LABEL_KEY_PATTERN = '/^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$/';
+    
+    /**
+     * Kubernetes annotation key pattern
+     */
+    private const K8S_ANNOTATION_KEY_PATTERN = '/^([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$/';
+    
+    /**
+     * Valid hostname pattern
+     */
+    private const HOSTNAME_PATTERN = '/^([a-zA-Z0-9]([-a-zA-Z0-9]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/';
+    
+    /**
+     * Path pattern (must start with /)
+     */
+    private const PATH_PATTERN = '/^\/.*$/';
+
+    /**
      * Determine if the user is authorized to make this request.
      */
     public function authorize(): bool
@@ -25,24 +50,24 @@ class IngressRequest extends FormRequest
             // MAIN INFO
             'name' => [
                 'required',
-                'regex:/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/'
+                'regex:' . self::K8S_NAME_PATTERN
             ],
             'namespace' => [
                 'required',
-                'regex:/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/'
+                'regex:' . self::K8S_NAME_PATTERN
             ],
 
-            // NOTES
+            // METADATA
             'key_labels.*' => [
                 'required',
-                'regex:/^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$/'
+                'regex:' . self::K8S_LABEL_KEY_PATTERN
             ],
             'value_labels.*' => [
                 'required',
             ],
             'key_annotations.*' => [
                 'required',
-                'regex:/^([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$/'
+                'regex:' . self::K8S_ANNOTATION_KEY_PATTERN
             ],
             'value_annotations.*' => [
                 'required',
@@ -55,7 +80,7 @@ class IngressRequest extends FormRequest
             ],
             'rules.*.host' => [
                 'nullable',
-                'regex:/^([a-zA-Z0-9]([-a-zA-Z0-9]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/'
+                'regex:' . self::HOSTNAME_PATTERN
             ],
             
             // PATH
@@ -64,7 +89,7 @@ class IngressRequest extends FormRequest
             ],
             'rules.*.path.pathName.*' => [
                 'required',
-                'regex:/^\/.*$/'
+                'regex:' . self::PATH_PATTERN
             ],
             'rules.*.path.pathType.*' => [
                 'required',
@@ -72,7 +97,7 @@ class IngressRequest extends FormRequest
             ],
             'rules.*.path.serviceName.*' => [
                 'required',
-                'regex:/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/'
+                'regex:' . self::K8S_NAME_PATTERN
             ],
             'rules.*.path.portNumber.*' => [
                 'required',
@@ -81,11 +106,10 @@ class IngressRequest extends FormRequest
                 'max:65535'
             ],
             
-
             // INGRESS EXTRAS
             'defaultBackendName' => [
                 'nullable',
-                'regex:/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/'
+                'regex:' . self::K8S_NAME_PATTERN
             ],
             'defaultBackendPort' => [
                 'nullable',
@@ -97,6 +121,11 @@ class IngressRequest extends FormRequest
         ];
     }
 
+    /**
+     * Get custom validation error messages.
+     *
+     * @return array<string, string>
+     */
     public function messages(): array
     {
         return [
@@ -106,7 +135,7 @@ class IngressRequest extends FormRequest
             'namespace.required' => 'The namespace field is required.',
             'namespace.regex' => 'The namespace field must contain only lowercase alphanumeric characters or hyphens and cannot start or end with a hyphen.',
         
-            // NOTES
+            // METADATA
             'key_labels.*.required' => 'The key labels field is required.',
             'key_labels.*.regex' => 'Each key label must contain only alphanumeric characters, hyphens, underscores, or periods, and cannot start or end with a period.',
             'value_labels.*.required' => 'The value labels field is required.',
@@ -134,6 +163,7 @@ class IngressRequest extends FormRequest
         
             // INGRESS EXTRAS
             'defaultBackendName.regex' => 'The defaultBackendName field must contain only lowercase alphanumeric characters or hyphens and cannot start or end with a hyphen.',
+            'defaultBackendPort.required_with' => 'The defaultBackendPort field is required when defaultBackendName is present.',
             'defaultBackendPort.integer' => 'The defaultBackendPort field must be an integer.',
             'defaultBackendPort.min' => 'The defaultBackendPort field must be at least :min.',
             'defaultBackendPort.max' => 'The defaultBackendPort field must not exceed :max.'

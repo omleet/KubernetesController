@@ -6,252 +6,293 @@ use App\Exceptions\ClusterConnectionException;
 use App\Exceptions\ClusterException;
 use App\Http\Requests\CustomResourceRequest;
 use Illuminate\Http\Request;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\View\View;
 use App\Models\Cluster;
 use GuzzleHttp\Client;
+use GuzzleHttp\Exception\RequestException;
 
 class CustomResourceController extends Controller
 {
-    private $endpoint;
-    private $token;
-    private $timeout;
+    private string $endpoint;
+    private string $token;
+    private int $timeout;
+    private Client $client;
 
+    /**
+     * Constructor - initialize controller with cluster connection
+     * 
+     * @throws ClusterException
+     * @throws ClusterConnectionException
+     */
     public function __construct()
     {
-        if (!session('clusterId')) 
+        if (!session('clusterId')) {
             throw new ClusterException();
+        }
 
         $cluster = Cluster::findOrFail(session('clusterId'));
 
-        if ($this->checkConnection($cluster) == -1)
+        if ($this->checkConnection($cluster) == -1) {
             throw new ClusterConnectionException();
+        }
 
         $this->endpoint = $cluster['endpoint'];
         $this->token = "Bearer " . $cluster['token'];
-        $this->timeout  = $cluster['timeout'];
+        $this->timeout = $cluster['timeout'];
+        
+        // Initialize the HTTP client once
+        $this->client = new Client([
+            'base_uri' => $this->endpoint,
+            'headers' => [
+                'Authorization' => $this->token,
+                'Accept' => 'application/json',
+            ],
+            'verify' => false,
+            'timeout' => $this->timeout
+        ]);
     }
     
-    private function checkConnection($cluster) 
+    /**
+     * Check if the cluster is reachable
+     * 
+     * @param Cluster $cluster
+     * @return int Status code or -1 if connection failed
+     */
+    private function checkConnection(Cluster $cluster): int
     {
-        
         try {
-            if ($cluster['auth_type'] == 'P') {
-                $client = new Client([
-                    'base_uri' => $cluster['endpoint'],
-                    'headers' => [
-                        'Accept' => 'application/json',
-                    ],
-                    'verify' => false,
-                    'timeout' => 0.5
-                ]);     
-            } else {
-                $client = new Client([
-                    'base_uri' => $cluster['endpoint'],
-                    'headers' => [
-                        'Authorization' => "Bearer ". $cluster['token'],
-                        'Accept' => 'application/json',
-                    ],
-                    'verify' => false,
-                    'timeout' => 0.5
-                ]);
+            $clientOptions = [
+                'base_uri' => $cluster['endpoint'],
+                'headers' => [
+                    'Accept' => 'application/json',
+                ],
+                'verify' => false,
+                'timeout' => 0.5
+            ];
+            
+            if ($cluster['auth_type'] !== 'P') {
+                $clientOptions['headers']['Authorization'] = "Bearer " . $cluster['token'];
             }
+            
+            $client = new Client($clientOptions);
             $response = $client->get("/api/v1");
-            $online = $response->getStatusCode();
+            
+            return $response->getStatusCode();
         } catch (\Exception $e) {
-            $online = -1;
+            return -1;
         }
-
-        return $online;
     }
 
-    public function index()
+    /**
+     * Display the custom resource creation form
+     * 
+     * @return View
+     */
+    public function index(): View
     {
         return view('customresource.index');
     }
 
     /**
      * Store a newly created resource in storage.
+     * 
+     * @param CustomResourceRequest $request
+     * @return RedirectResponse
      */
-    public function store(CustomResourceRequest $request)
+    public function store(CustomResourceRequest $request): RedirectResponse
     {
         $formData = $request->validated();
         $data = json_decode($formData['resource'], true);
 
-        if ($data == null) {
-            $errormsg['message'] = "Could not parse JSON, syntax error";
-            $errormsg['status'] = "Bad Request";
-            $errormsg['code'] = "400";
-
-            return redirect()->back()->withInput()->with('error_msg', $errormsg);
+        // Validate JSON parsing
+        if ($data === null) {
+            return $this->createErrorResponse(
+                "Could not parse JSON, syntax error",
+                "Bad Request",
+                "400"
+            );
         }
 
+        // Validate resource kind
         if (!isset($data['kind'])) {
-            $errormsg['message'] = "Resource kind not found";
-            $errormsg['status'] = "Bad Request";
-            $errormsg['code'] = "400";
-
-            return redirect()->back()->withInput()->with('error_msg', $errormsg);
+            return $this->createErrorResponse(
+                "Resource kind not found",
+                "Bad Request",
+                "400"
+            );
         }
 
-        if (!isset($data['metadata']['namespace'])) {
-            $endpoint = $this->getKubernetesEndpoint($data['kind']);
-        } else {
-            $endpoint = $this->getKubernetesEndpoint($data['kind'],$data['metadata']['namespace']);
-        }
+        // Get appropriate Kubernetes API endpoint
+        $endpoint = $this->getKubernetesEndpoint(
+            $data['kind'],
+            $data['metadata']['namespace'] ?? null
+        );
 
-        if ($endpoint == -1) {
-            $errormsg['message'] = "Could not find the correct endpoint for the specified resource";
-            $errormsg['status'] = "Unprocessable Content";
-            $errormsg['code'] = "422";
-
-            return redirect()->back()->withInput()->with('error_msg', $errormsg);
+        if ($endpoint === -1) {
+            return $this->createErrorResponse(
+                "Could not find the correct endpoint for the specified resource",
+                "Unprocessable Content",
+                "422"
+            );
         }
 
         try {
-    
-            $jsonData = json_encode($data);
-
-            $client = new Client([
-                'base_uri' => $this->endpoint,
-                'headers' => [
-                    'Authorization' => $this->token,
-                    'Accept' => 'application/json',
-                ],
-                'body' => $jsonData,
-                'verify' => false,
-                'timeout' => $this->timeout
-            ]);
-
-            $response = $client->post($endpoint);
-
-            if (isset($data['metadata']['namespace']) && isset($data['metadata']['name'])) {
-                $successMessage = $data['kind'] ." '".$data['metadata']['name']."' was added with success on Namespace '". $data['metadata']['namespace']."'";
-            } else if (!isset($data['metadata']['namespace'])){
-                $successMessage = $data['kind'] ." '".$data['metadata']['name']."' was added with success";
-            } else {
-                $successMessage = $data['kind'] ." was added with success";
-            }
-
-            return redirect()->route('CustomResources.index')->withInput()->with('success-msg', $successMessage);
-        } catch (\GuzzleHttp\Exception\RequestException $e) {
+            // Send request to Kubernetes API
+            $this->client->post($endpoint, ['body' => json_encode($data)]);
             
-            $errormsg = $this->treat_error($e->getResponse()->getBody()->getContents());
-            
-            if ($errormsg == null) {
-                return redirect()->back()->withInput()->with('error_msg', $errormsg);
-            }
+            // Create appropriate success message
+            $successMessage = $this->createSuccessMessage($data);
 
-            return redirect()->back()->withInput()->with('error_msg', $errormsg);
+            return redirect()
+                ->route('CustomResources.index')
+                ->withInput()
+                ->with('success-msg', $successMessage);
+        } catch (RequestException $e) {
+            $errorMsg = $this->parseErrorResponse($e->getResponse()->getBody()->getContents());
+            return redirect()->back()->withInput()->with('error_msg', $errorMsg);
         } catch (\Exception $e) {
-            $errormsg = $this->treat_error($e->getMessage());
-
-            if ($errormsg == null) {
-                $errormsg['message'] = $e->getMessage();
-                $errormsg['status'] = "Internal Server Error";
-                $errormsg['code'] = "500";
+            $errorMsg = $this->parseErrorResponse($e->getMessage());
+            
+            if ($errorMsg === null) {
+                $errorMsg = [
+                    'message' => $e->getMessage(),
+                    'status' => "Internal Server Error",
+                    'code' => "500"
+                ];
             }
-
-            return redirect()->back()->withInput()->with('error_msg', $errormsg);
+            
+            return redirect()->back()->withInput()->with('error_msg', $errorMsg);
         }
     }
 
-    function getKubernetesEndpoint($resourceKind, $namespace = null) {
-        switch ($resourceKind) {
+    /**
+     * Create a success message based on the resource data
+     * 
+     * @param array $data Resource data
+     * @return string Success message
+     */
+    private function createSuccessMessage(array $data): string
+    {
+        if (isset($data['metadata']['namespace']) && isset($data['metadata']['name'])) {
+            return $data['kind'] . " '" . $data['metadata']['name'] . "' was added with success on Namespace '" . $data['metadata']['namespace'] . "'";
+        } elseif (!isset($data['metadata']['namespace']) && isset($data['metadata']['name'])) {
+            return $data['kind'] . " '" . $data['metadata']['name'] . "' was added with success";
+        } else {
+            return $data['kind'] . " was added with success";
+        }
+    }
+
+    /**
+     * Create an error response
+     * 
+     * @param string $message Error message
+     * @param string $status Error status
+     * @param string $code Error code
+     * @return RedirectResponse
+     */
+    private function createErrorResponse(string $message, string $status, string $code): RedirectResponse
+    {
+        $errorMsg = [
+            'message' => $message,
+            'status' => $status,
+            'code' => $code
+        ];
+
+        return redirect()->back()->withInput()->with('error_msg', $errorMsg);
+    }
+
+    /**
+     * Get the appropriate Kubernetes API endpoint for a resource kind
+     * 
+     * @param string $resourceKind The kind of resource
+     * @param string|null $namespace The namespace (if applicable)
+     * @return string|int The API endpoint or -1 if not found
+     */
+    private function getKubernetesEndpoint(string $resourceKind, ?string $namespace = null)
+    {
+        // Map of resource kinds to their API endpoints
+        $resourceEndpoints = [
             // Core API (v1)
-            case 'Pod':
-                return "/api/v1/namespaces/{$namespace}/pods";
-            case 'Service':
-                return "/api/v1/namespaces/{$namespace}/services";
-            case 'ConfigMap':
-                return "/api/v1/namespaces/{$namespace}/configmaps";
-            case 'Secret':
-                return "/api/v1/namespaces/{$namespace}/secrets";
-            case 'PersistentVolume':
-                return "/api/v1/persistentvolumes";
-            case 'PersistentVolumeClaim':
-                return "/api/v1/namespaces/{$namespace}/persistentvolumeclaims";
-            case 'Namespace':
-                return "/api/v1/namespaces";
-            case 'Event':
-                return "/api/v1/namespaces/{$namespace}/events";
-            case 'Endpoint':
-                return "/api/v1/namespaces/{$namespace}/endpoints";
-            case 'ReplicationController':
-                return "/api/v1/namespaces/{$namespace}/replicationcontrollers";
-            case 'ServiceAccount':
-                return "/api/v1/namespaces/{$namespace}/serviceaccounts";
-            case 'ResourceQuota':
-                return "/api/v1/namespaces/{$namespace}/resourcequotas";
-            case 'LimitRange':
-                return "/api/v1/namespaces/{$namespace}/limitranges";
-            case 'PodTemplate':
-                return "/api/v1/namespaces/{$namespace}/podtemplates";
+            'Pod' => "/api/v1/namespaces/{$namespace}/pods",
+            'Service' => "/api/v1/namespaces/{$namespace}/services",
+            'ConfigMap' => "/api/v1/namespaces/{$namespace}/configmaps",
+            'Secret' => "/api/v1/namespaces/{$namespace}/secrets",
+            'PersistentVolume' => "/api/v1/persistentvolumes",
+            'PersistentVolumeClaim' => "/api/v1/namespaces/{$namespace}/persistentvolumeclaims",
+            'Namespace' => "/api/v1/namespaces",
+            'Event' => "/api/v1/namespaces/{$namespace}/events",
+            'Endpoint' => "/api/v1/namespaces/{$namespace}/endpoints",
+            'ReplicationController' => "/api/v1/namespaces/{$namespace}/replicationcontrollers",
+            'ServiceAccount' => "/api/v1/namespaces/{$namespace}/serviceaccounts",
+            'ResourceQuota' => "/api/v1/namespaces/{$namespace}/resourcequotas",
+            'LimitRange' => "/api/v1/namespaces/{$namespace}/limitranges",
+            'PodTemplate' => "/api/v1/namespaces/{$namespace}/podtemplates",
             
             // Apps API (apps/v1)
-            case 'Deployment':
-                return "/apis/apps/v1/namespaces/{$namespace}/deployments";
-            case 'StatefulSet':
-                return "/apis/apps/v1/namespaces/{$namespace}/statefulsets";
-            case 'DaemonSet':
-                return "/apis/apps/v1/namespaces/{$namespace}/daemonsets";
-            case 'ReplicaSet':
-                return "/apis/apps/v1/namespaces/{$namespace}/replicasets";
+            'Deployment' => "/apis/apps/v1/namespaces/{$namespace}/deployments",
+            'StatefulSet' => "/apis/apps/v1/namespaces/{$namespace}/statefulsets",
+            'DaemonSet' => "/apis/apps/v1/namespaces/{$namespace}/daemonsets",
+            'ReplicaSet' => "/apis/apps/v1/namespaces/{$namespace}/replicasets",
     
             // Batch API (batch/v1)
-            case 'Job':
-                return "/apis/batch/v1/namespaces/{$namespace}/jobs";
-            case 'CronJob':
-                return "/apis/batch/v1/namespaces/{$namespace}/cronjobs";
+            'Job' => "/apis/batch/v1/namespaces/{$namespace}/jobs",
+            'CronJob' => "/apis/batch/v1/namespaces/{$namespace}/cronjobs",
     
             // Autoscaling API (autoscaling/v1, autoscaling/v2)
-            case 'HorizontalPodAutoscaler':
-                return "/apis/autoscaling/v1/namespaces/{$namespace}/horizontalpodautoscalers";
+            'HorizontalPodAutoscaler' => "/apis/autoscaling/v1/namespaces/{$namespace}/horizontalpodautoscalers",
     
             // Networking API (networking.k8s.io/v1)
-            case 'Ingress':
-                return "/apis/networking.k8s.io/v1/namespaces/{$namespace}/ingresses";
-            case 'NetworkPolicy':
-                return "/apis/networking.k8s.io/v1/namespaces/{$namespace}/networkpolicies";
+            'Ingress' => "/apis/networking.k8s.io/v1/namespaces/{$namespace}/ingresses",
+            'NetworkPolicy' => "/apis/networking.k8s.io/v1/namespaces/{$namespace}/networkpolicies",
     
             // Policy API (policy/v1)
-            case 'PodDisruptionBudget':
-                return "/apis/policy/v1/namespaces/{$namespace}/poddisruptionbudgets";
+            'PodDisruptionBudget' => "/apis/policy/v1/namespaces/{$namespace}/poddisruptionbudgets",
     
             // Custom Resource Definitions (CRDs)
-            case 'CustomResourceDefinition':
-                return "/apis/apiextensions.k8s.io/v1/customresourcedefinitions";
+            'CustomResourceDefinition' => "/apis/apiextensions.k8s.io/v1/customresourcedefinitions",
     
             // Storage API (storage.k8s.io/v1)
-            case 'StorageClass':
-                return "/apis/storage.k8s.io/v1/storageclasses";
-            case 'VolumeAttachment':
-                return "/apis/storage.k8s.io/v1/volumeattachments";
+            'StorageClass' => "/apis/storage.k8s.io/v1/storageclasses",
+            'VolumeAttachment' => "/apis/storage.k8s.io/v1/volumeattachments",
     
             // Other APIs
-            case 'APIService':
-                return "/apis/apiregistration.k8s.io/v1/apiservices";
-            case 'CertificateSigningRequest':
-                return "/apis/certificates.k8s.io/v1/certificatesigningrequests";
-            case 'PodSecurityPolicy':
-                return "/apis/policy/v1beta1/podsecuritypolicies";
-            
-            default:
-                return -1;
-        }
+            'APIService' => "/apis/apiregistration.k8s.io/v1/apiservices",
+            'CertificateSigningRequest' => "/apis/certificates.k8s.io/v1/certificatesigningrequests",
+            'PodSecurityPolicy' => "/apis/policy/v1beta1/podsecuritypolicies",
+        ];
+
+        return $resourceEndpoints[$resourceKind] ?? -1;
     }
 
-    private function treat_error($errorMessage) 
+    /**
+     * Parse error response from Kubernetes API
+     * 
+     * @param string $errorMessage Raw error message
+     * @return array|null Structured error data
+     */
+    private function parseErrorResponse(string $errorMessage): ?array
     {
-        $error = null;
-
         $jsonData = json_decode($errorMessage, true);
-
-        if (isset($jsonData['message']))
+        
+        if (!$jsonData) {
+            return null;
+        }
+        
+        $error = [];
+        
+        if (isset($jsonData['message'])) {
             $error['message'] = $jsonData['message'];
-        if (isset($jsonData['status']))
-            $error['status'] = $jsonData['status'];
-        if (isset($jsonData['code']))
+        }
+        
+        if (isset($jsonData['status'])) {
+            $error['status'] = $jsonData['status'] . (isset($jsonData['reason']) ? " ({$jsonData['reason']})" : "");
+        }
+        
+        if (isset($jsonData['code'])) {
             $error['code'] = $jsonData['code'];
-
-        return $error;
+        }
+        
+        return empty($error) ? null : $error;
     }
 }

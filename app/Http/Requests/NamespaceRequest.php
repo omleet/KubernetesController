@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class NamespaceRequest extends FormRequest
 {
@@ -25,53 +26,110 @@ class NamespaceRequest extends FormRequest
             // MAIN INFO
             'name' => [
                 'required',
-                'regex:/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/'
+                'max:63',
+                'regex:/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/',
+                // Prevent creation of system namespaces
+                function ($attribute, $value, $fail) {
+                    if (preg_match('/^kube-/', $value)) {
+                        $fail('Cannot create namespaces with the "kube-" prefix as they are reserved for system use.');
+                    }
+                },
             ],
             
             // NOTES
             'key_labels.*' => [
-                'required',
-                'regex:/^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$/'
+                'nullable',
+                'regex:/^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$/',
+                'max:253',
             ],
             'value_labels.*' => [
-                'required',
+                'nullable',
+                'max:63',
             ],
             'key_annotations.*' => [
-                'required',
-                'regex:/^([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$/'
+                'nullable',
+                'regex:/^([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$/',
+                'max:253',
             ],
             'value_annotations.*' => [
-                'required',
+                'nullable',
             ],
             
             // NAMESPACE EXTRAS
             'finalizers.*' => [
-                'required',
-                'regex:/^([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$/'
+                'nullable',
+                'regex:/^([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$/',
+                'max:253',
             ],
         ];
     }
 
+    /**
+     * Get custom validation messages
+     * 
+     * @return array
+     */
     public function messages(): array
-{
-    return [
-        // MAIN INFO
-        'name.required' => 'The name field is required.',
-        'name.regex' => 'The name field must start with a lowercase letter or number and can contain dashes.',
+    {
+        return [
+            // MAIN INFO
+            'name.required' => 'The namespace name is required.',
+            'name.max' => 'The namespace name cannot exceed 63 characters.',
+            'name.regex' => 'The namespace name must start with a lowercase letter or number, can contain dashes, and must end with a letter or number.',
 
-        // NOTES
-        'key_labels.*.required' => 'Each label key is required.',
-        'key_labels.*.regex' => 'Each label key must be a valid DNS subdomain.',
-        'value_labels.*.required' => 'Each label value is required.',
+            // NOTES
+            'key_labels.*.regex' => 'Label keys must be valid DNS subdomain names.',
+            'key_labels.*.max' => 'Label keys cannot exceed 253 characters.',
+            'value_labels.*.max' => 'Label values cannot exceed 63 characters.',
 
-        'key_annotations.*.required' => 'Each annotation key is required.',
-        'key_annotations.*.regex' => 'Each annotation key must be a valid DNS subdomain.',
-        'value_annotations.*.required' => 'Each annotation value is required.',
+            'key_annotations.*.regex' => 'Annotation keys must be valid DNS subdomain names.',
+            'key_annotations.*.max' => 'Annotation keys cannot exceed 253 characters.',
 
-        // NAMESPACE EXTRAS
-        'finalizers.*.required' => 'Each finalizer is required.',
-        'finalizers.*.regex' => 'Each finalizer must be a valid DNS subdomain.',
-    ];
-}
+            // NAMESPACE EXTRAS
+            'finalizers.*.regex' => 'Finalizers must be valid DNS subdomain names.',
+            'finalizers.*.max' => 'Finalizers cannot exceed 253 characters.',
+        ];
+    }
 
+    /**
+     * Prepare the data for validation.
+     *
+     * @return void
+     */
+    protected function prepareForValidation(): void
+    {
+        // Filter out empty values from arrays
+        $this->filterEmptyArrayValues('key_labels', 'value_labels');
+        $this->filterEmptyArrayValues('key_annotations', 'value_annotations');
+        
+        // Make sure finalizers is an array
+        if ($this->has('finalizers') && !is_array($this->input('finalizers'))) {
+            $this->merge(['finalizers' => []]);
+        }
+    }
+    
+    /**
+     * Filter out empty values from paired key-value arrays
+     * 
+     * @param string $keyField
+     * @param string $valueField
+     * @return void
+     */
+    private function filterEmptyArrayValues(string $keyField, string $valueField): void
+    {
+        if ($this->has($keyField) && $this->has($valueField)) {
+            $keys = array_filter($this->input($keyField) ?? [], function ($value) {
+                return $value !== null && $value !== '';
+            });
+            
+            $values = array_filter($this->input($valueField) ?? [], function ($value, $key) use ($keys) {
+                return isset($keys[$key]) && $keys[$key] !== null && $keys[$key] !== '';
+            }, ARRAY_FILTER_USE_BOTH);
+            
+            $this->merge([
+                $keyField => $keys,
+                $valueField => $values,
+            ]);
+        }
+    }
 }

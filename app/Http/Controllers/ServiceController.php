@@ -8,336 +8,470 @@ use App\Http\Requests\ServiceRequest;
 use App\Models\Cluster;
 use Illuminate\Http\RedirectResponse;
 use GuzzleHttp\Client;
+use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\View\View;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class ServiceController extends Controller
 {
-    private $endpoint;
-    private $token;
-    private $timeout;
+    private string $endpoint;
+    private string $token;
+    private float $timeout;
+    private Client $client;
 
+    /**
+     * Initialize controller with cluster connection
+     * 
+     * @throws ClusterException
+     * @throws ClusterConnectionException
+     */
     public function __construct()
     {
-        if (!session('clusterId')) 
-            throw new ClusterException();
+        if (!session('clusterId')) {
+            throw new ClusterException('No cluster selected');
+        }
 
         $cluster = Cluster::findOrFail(session('clusterId'));
 
-        if ($this->checkConnection($cluster) == -1)
-            throw new ClusterConnectionException();
+        if ($this->checkConnection($cluster) !== 200) {
+            throw new ClusterConnectionException('Could not connect to cluster');
+        }
 
         $this->endpoint = $cluster['endpoint'];
         $this->token = "Bearer " . $cluster['token'];
-        $this->timeout  = $cluster['timeout'];
-    }
-
-    private function checkConnection($cluster) {
+        $this->timeout = $cluster['timeout'];
         
-        try {
-            if ($cluster['auth_type'] == 'P') {
-                $client = new Client([
-                    'base_uri' => $cluster['endpoint'],
-                    'headers' => [
-                        'Accept' => 'application/json',
-                    ],
-                    'verify' => false,
-                    'timeout' => 0.5
-                ]);     
-            } else {
-                $client = new Client([
-                    'base_uri' => $cluster['endpoint'],
-                    'headers' => [
-                        'Authorization' => "Bearer ". $cluster['token'],
-                        'Accept' => 'application/json',
-                    ],
-                    'verify' => false,
-                    'timeout' => 0.5
-                ]);
-            }
-            $response = $client->get("/api/v1");
-            $online = $response->getStatusCode();
-        } catch (\Exception $e) {
-            $online = -1;
-        }
-
-        return $online;
+        // Initialize the HTTP client once
+        $this->client = new Client([
+            'base_uri' => $this->endpoint,
+            'headers' => [
+                'Authorization' => $this->token,
+                'Accept' => 'application/json',
+            ],
+            'verify' => false,
+            'timeout' => $this->timeout
+        ]);
     }
-    
-    public function index(Request $request): View
+
+    /**
+     * Check if the cluster is accessible
+     * 
+     * @param Cluster $cluster
+     * @return int Status code or -1 if connection failed
+     */
+    private function checkConnection(Cluster $cluster): int
     {
         try {
-            $client = new Client([
-                'base_uri' => $this->endpoint,
+            $clientConfig = [
+                'base_uri' => $cluster['endpoint'],
                 'headers' => [
-                    'Authorization' => $this->token,
                     'Accept' => 'application/json',
                 ],
                 'verify' => false,
-                'timeout' => $this->timeout
-            ]);
-
-            $response = $client->get("/api/v1/services");
-
-            $jsonData = json_decode($response->getBody(), true);
+                'timeout' => 0.5
+            ];
             
-            $services = [];
+            // Add authorization header if needed
+            if ($cluster['auth_type'] !== 'P') {
+                $clientConfig['headers']['Authorization'] = "Bearer " . $cluster['token'];
+            }
             
-            foreach ($jsonData['items'] as $jsonData) {
-                $data['name'] =  $jsonData['metadata']['name'];
-                $data['namespace'] =  $jsonData['metadata']['namespace'];
-                $data['ports'] =  count($jsonData['spec']['ports']);
-                $data['selector'] =  isset($jsonData['spec']['selector']) ? $jsonData['spec']['selector'] : "-";
-                $data['type'] =  $jsonData['spec']['type'];
-
-                $services[] = $data;
-            }
-
-            //FILTERS
-            $namespaceList = [];
-            foreach ($services as $key => $service) {
-                if ($request->query('showDefault') != "true") {
-                    if (!preg_match('/^kube-/', $service['namespace']))
-                    array_push($namespaceList,$service['namespace']);
-                } else {
-                    array_push($namespaceList,$service['namespace']);
-                }
-            }
-
-            if ($request->query('showNamespaceData') && $request->query('showNamespaceData') != "All") {
-                foreach ($services as $key => $service) {
-                    if ($service['namespace'] != $request->query('showNamespaceData')) 
-                    {
-                        unset($services[$key]);
-                    }
-                }
-            }
-            $namespaceList = array_unique($namespaceList);
-
-            if ($request->query('showDefault') != "true") {
-                foreach ($services as $key => $service) {
-                    if (preg_match('/^kube-/', $service['namespace'])) 
-                    {
-                        unset($services[$key]);
-                    }
-                }
-            }
-
-            return view('services.index', ['services' => $services, 'namespaceList' => $namespaceList]);
+            $client = new Client($clientConfig);
+            $response = $client->get("/api/v1");
+            
+            return $response->getStatusCode();
         } catch (\Exception $e) {
+            Log::warning("Cluster connection failed: " . $e->getMessage());
+            return -1;
+        }
+    }
+    
+    /**
+     * Display a listing of services
+     * 
+     * @param Request $request
+     * @return View
+     */
+    public function index(Request $request): View
+    {
+        try {
+            $response = $this->client->get("/api/v1/services");
+            $responseData = json_decode($response->getBody(), true);
+            
+            $services = $this->processServiceData($responseData['items'] ?? []);
+            
+            // Apply filters
+            $showDefault = $request->query('showDefault') === "true";
+            $namespaceFilter = $request->query('showNamespaceData');
+            
+            // Extract namespace list for filter dropdown
+            $namespaceList = $this->extractNamespaceList($services, $showDefault);
+            
+            // Apply namespace filter if selected
+            if ($namespaceFilter && $namespaceFilter !== "All") {
+                $services = array_filter($services, function($service) use ($namespaceFilter) {
+                    return $service['namespace'] === $namespaceFilter;
+                });
+            }
+            
+            // Filter out system namespaces if not showing default
+            if (!$showDefault) {
+                $services = array_filter($services, function($service) {
+                    return !preg_match('/^kube-/', $service['namespace']);
+                });
+            }
+            
+            // Re-index array after filtering
+            $services = array_values($services);
+            
+            return view('services.index', [
+                'services' => $services, 
+                'namespaceList' => $namespaceList
+            ]);
+        } catch (GuzzleException | \Exception $e) {
+            Log::error("Error fetching services: " . $e->getMessage());
             return view('services.index', ['conn_error' => $e->getMessage()]);
         }
     }
 
-    public function show($namespace, $id): View
+    /**
+     * Process service data from Kubernetes API
+     * 
+     * @param array $serviceItems
+     * @return array
+     */
+    private function processServiceData(array $serviceItems): array
+    {
+        $services = [];
+        
+        foreach ($serviceItems as $item) {
+            $metadata = $item['metadata'] ?? [];
+            $spec = $item['spec'] ?? [];
+            
+            $service = [
+                'name' => $metadata['name'] ?? '',
+                'namespace' => $metadata['namespace'] ?? '',
+                'ports' => isset($spec['ports']) ? count($spec['ports']) : 0,
+                'selector' => $spec['selector'] ?? '-',
+                'type' => $spec['type'] ?? 'ClusterIP'
+            ];
+            
+            $services[] = $service;
+        }
+        
+        return $services;
+    }
+    
+    /**
+     * Extract unique namespace list for filter dropdown
+     * 
+     * @param array $services
+     * @param bool $showDefault Whether to include system namespaces
+     * @return array
+     */
+    private function extractNamespaceList(array $services, bool $showDefault): array
+    {
+        $namespaceList = [];
+        
+        foreach ($services as $service) {
+            $namespace = $service['namespace'];
+            
+            // Skip system namespaces if not showing default
+            if (!$showDefault && preg_match('/^kube-/', $namespace)) {
+                continue;
+            }
+            
+            $namespaceList[] = $namespace;
+        }
+        
+        return array_unique($namespaceList);
+    }
+
+    /**
+     * Display the specified service
+     *
+     * @param string $namespace Namespace name
+     * @param string $id Service name
+     * @return View
+     */
+    public function show(string $namespace, string $id): View
     {
         try {
-            $client = new Client([
-                'base_uri' => $this->endpoint,
-                'headers' => [
-                    'Authorization' => $this->token,
-                    'Accept' => 'application/json',
-                ],
-                'verify' => false,
-                'timeout' => $this->timeout
-            ]);
-
-            $response = $client->get("/api/v1/namespaces/$namespace/services/$id");
-
+            $response = $this->client->get("/api/v1/namespaces/$namespace/services/$id");
             $jsonData = json_decode($response->getBody(), true);
+            
+            // Remove managed fields to clean up the JSON output
             unset($jsonData['metadata']['managedFields']);
             $json = json_encode($jsonData, JSON_PRETTY_PRINT);
             
-            $data = [];
-            // METADATA
-            $data['name'] = isset($jsonData['metadata']['name']) ? $jsonData['metadata']['name'] : '';
-            $data['namespace'] = isset($jsonData['metadata']['namespace']) ? $jsonData['metadata']['namespace'] : '';
-            $data['uid'] = isset($jsonData['metadata']['uid']) ? $jsonData['metadata']['uid'] : '';
-            $data['creationTimestamp'] = isset($jsonData['metadata']['creationTimestamp']) ? $jsonData['metadata']['creationTimestamp'] : '';
-            $data['labels'] = isset($jsonData['metadata']['labels']) ? $jsonData['metadata']['labels'] : null;
-            $data['annotations'] = isset($jsonData['metadata']['annotations']) ? $jsonData['metadata']['annotations'] : null;
-            
-            // SPEC
-            $data['ports'] = isset($jsonData['spec']['ports']) ? $jsonData['spec']['ports'] : null;
-            $data['selector'] = isset($jsonData['spec']['selector']) ? $jsonData['spec']['selector'] : null;
-            $data['type'] = isset($jsonData['spec']['type']) ? $jsonData['spec']['type'] : '';
-            $data['sessionAffinity'] = isset($jsonData['spec']['sessionAffinity']) ? $jsonData['spec']['sessionAffinity'] : '';
-            $data['externalTrafficPolicy'] = isset($jsonData['spec']['externalTrafficPolicy']) ? $jsonData['spec']['externalTrafficPolicy'] : '';
+            $data = $this->extractServiceDetails($jsonData);
             
             return view('services.show', ['service' => $data, 'json' => $json]);
-        } catch (\Exception $e) {
+        } catch (GuzzleException | \Exception $e) {
+            Log::error("Error fetching service details: " . $e->getMessage());
             return view('services.show', ['conn_error' => $e->getMessage()]);
         }
     }
     
-    public function create(): View 
+    /**
+     * Extract service details from API response
+     * 
+     * @param array $jsonData
+     * @return array
+     */
+    private function extractServiceDetails(array $jsonData): array
+    {
+        $metadata = $jsonData['metadata'] ?? [];
+        $spec = $jsonData['spec'] ?? [];
+        
+        return [
+            // Metadata
+            'name' => $metadata['name'] ?? '',
+            'namespace' => $metadata['namespace'] ?? '',
+            'uid' => $metadata['uid'] ?? '',
+            'creationTimestamp' => $metadata['creationTimestamp'] ?? '',
+            'labels' => $metadata['labels'] ?? [],
+            'annotations' => $metadata['annotations'] ?? [],
+            
+            // Spec
+            'ports' => $spec['ports'] ?? [],
+            'selector' => $spec['selector'] ?? [],
+            'type' => $spec['type'] ?? 'ClusterIP',
+            'sessionAffinity' => $spec['sessionAffinity'] ?? 'None',
+            'externalTrafficPolicy' => $spec['externalTrafficPolicy'] ?? '',
+            'clusterIP' => $spec['clusterIP'] ?? '',
+            'externalName' => $spec['externalName'] ?? '',
+        ];
+    }
+    
+    /**
+     * Show the form for creating a new service
+     * 
+     * @return View
+     */
+    public function create(): View
     {
         return view("services.create");
     }
 
+    /**
+     * Store a newly created service
+     * 
+     * @param ServiceRequest $request
+     * @return RedirectResponse
+     */
     public function store(ServiceRequest $request): RedirectResponse
     {
         try {
             $formData = $request->validated();
-            
-            // MAIN INFO
-            $data['apiVersion'] = "v1";
-            $data['kind'] = "Service";
-            $data['metadata']['name'] = $formData['name'];
-            $data['metadata']['namespace'] = $formData['namespace'];
-
-            // LABELS & ANNOTATIONS
-            if (isset($formData['key_labels']) && isset($formData['value_labels'])) {
-                foreach ($formData['key_labels'] as $key => $label) {
-                    $data['metadata']['labels'][$formData['key_labels'][$key]] = $formData['value_labels'][$key];
-                }
-            }
-
-            if (isset($formData['key_annotations']) && isset($formData['value_annotations'])) {
-                foreach ($formData['key_annotations'] as $key => $annotation) {
-                    $data['metadata']['annotations'][$formData['key_annotations'][$key]] = $formData['value_annotations'][$key];
-                }
-            }
-
-            //SELECTOR
-            if (isset($formData['key_selectorLabels']) && isset($formData['value_selectorLabels'])) {
-                foreach ($formData['key_selectorLabels'] as $key => $selector) {
-                    $data['spec']['selector'][$formData['key_selectorLabels'][$key]] = $formData['value_selectorLabels'][$key];
-                }
-            }
-
-            // PORTS
-            $data['spec']['ports'] = [];
-            if (isset($formData['portName']) && isset($formData['protocol']) && isset($formData['port']) && isset($formData['target'])) {
-                foreach ($formData['portName'] as $key => $port) {
-                    $arr_port = [];
-                    $arr_port['name'] = $formData['portName'][$key];
-                    $arr_port['protocol'] = $formData['protocol'][$key];
-                    $arr_port['port'] = intval($formData['port'][$key]);
-                    $arr_port['targetPort'] = intval($formData['target'][$key]);
-                    
-                    // Only add nodePort if it's provided and the service type requires it
-                    if (isset($formData['nodePort'][$key]) && !empty($formData['nodePort'][$key]) && 
-                        isset($formData['type']) && in_array($formData['type'], ['NodePort', 'LoadBalancer'])) {
-                        $arr_port['nodePort'] = intval($formData['nodePort'][$key]);
-                    }
-
-                    array_push($data['spec']['ports'], $arr_port);
-                }
-            }
-            
-
-            // EXTRA INFO
-            if (isset($formData['type'])  && $formData['type'] != "Auto") {
-                $data['spec']['type'] = $formData['type'];
-            }
-
-            if (isset($formData['type']) && isset($formData['externalName'])) {
-                $data['spec']['externalName'] = $formData['externalName'];
-            }
-
-            if (isset($formData['externalTrafficPolicy'])  && $formData['externalTrafficPolicy'] != "Auto") {
-                $data['spec']['externalTrafficPolicy'] = $formData['externalTrafficPolicy'];
-            }
-
-            if (isset($formData['sessionAffinity']) && $formData['sessionAffinity'] != "Auto") {
-                $data['spec']['sessionAffinity'] = $formData['sessionAffinity'];
-            }
-
-            if (isset($formData['sessionAffinity']) && isset($formData['sessionAffinityConfig'])  && $formData['sessionAffinity'] != "Auto") {
-                $data['spec']['sessionAffinityConfig']['clientIP']['timeoutSeconds'] = intval($formData['sessionAffinityTimeoutSeconds']);
-            }
-            
-
-            $jsonData = json_encode($data);
-
+            $serviceData = $this->buildServiceData($formData);
+            $jsonData = json_encode($serviceData);
 
             $client = new Client([
                 'base_uri' => $this->endpoint,
                 'headers' => [
                     'Authorization' => $this->token,
                     'Accept' => 'application/json',
+                    'Content-Type' => 'application/json',
                 ],
                 'body' => $jsonData,
                 'verify' => false,
                 'timeout' => $this->timeout
             ]);
 
-            $response = $client->post("/api/v1/namespaces/".$formData['namespace']."/services");
+            $client->post("/api/v1/namespaces/{$formData['namespace']}/services");
 
-            return redirect()->route('Services.index')->with('success-msg', "Service '". $formData['name'] ."' was added with success on Namespace '". $formData['namespace']."'");
-        } catch (\GuzzleHttp\Exception\RequestException $e) {
-            
-            $errormsg = $this->treat_error($e->getResponse()->getBody()->getContents());
-            
-            if ($errormsg == null) {
-                return redirect()->back()->withInput()->with('error_msg', $errormsg);
-            }
-
-            return redirect()->back()->withInput()->with('error_msg', $errormsg);
+            return redirect()->route('Services.index')
+                ->with('success-msg', "Service '{$formData['name']}' was added successfully in namespace '{$formData['namespace']}'");
+        } catch (GuzzleException $e) {
+            Log::error("Error creating service: " . $e->getMessage());
+            $errorMsg = $this->parseErrorResponse($e);
+            return redirect()->back()->withInput()->with('error_msg', $errorMsg);
         } catch (\Exception $e) {
-            $errormsg = $this->treat_error($e->getMessage());
-
-            if ($errormsg == null) {
-                $errormsg['message'] = $e->getMessage();
-                $errormsg['status'] = "Internal Server Error";
-                $errormsg['code'] = "500";
-            }
-
-            return redirect()->back()->withInput()->with('error_msg', $errormsg);
+            Log::error("Unexpected error creating service: " . $e->getMessage());
+            $errorMsg = $this->parseErrorMessage($e->getMessage());
+            return redirect()->back()->withInput()->with('error_msg', $errorMsg);
         }
     }
 
-    public function destroy($namespace, $id) 
+    /**
+     * Build service data structure from form data
+     * 
+     * @param array $formData
+     * @return array
+     */
+    private function buildServiceData(array $formData): array
+    {
+        $data = [
+            'apiVersion' => "v1",
+            'kind' => "Service",
+            'metadata' => [
+                'name' => $formData['name'],
+                'namespace' => $formData['namespace']
+            ],
+            'spec' => [
+                'ports' => []
+            ]
+        ];
+
+        // Add labels if provided
+        if (!empty($formData['key_labels']) && !empty($formData['value_labels'])) {
+            foreach ($formData['key_labels'] as $key => $label) {
+                $data['metadata']['labels'][$label] = $formData['value_labels'][$key];
+            }
+        }
+
+        // Add annotations if provided
+        if (!empty($formData['key_annotations']) && !empty($formData['value_annotations'])) {
+            foreach ($formData['key_annotations'] as $key => $annotation) {
+                $data['metadata']['annotations'][$annotation] = $formData['value_annotations'][$key];
+            }
+        }
+        
+        // Add selector labels if provided
+        if (!empty($formData['key_selectorLabels']) && !empty($formData['value_selectorLabels'])) {
+            foreach ($formData['key_selectorLabels'] as $key => $selector) {
+                $data['spec']['selector'][$selector] = $formData['value_selectorLabels'][$key];
+            }
+        }
+        
+        // Process ports
+        if (!empty($formData['portName']) && !empty($formData['protocol']) && 
+            !empty($formData['port']) && !empty($formData['target'])) {
+            
+            foreach ($formData['portName'] as $key => $portName) {
+                $port = [
+                    'name' => $portName,
+                    'protocol' => $formData['protocol'][$key],
+                    'port' => intval($formData['port'][$key]),
+                    'targetPort' => intval($formData['target'][$key])
+                ];
+                
+                // Add nodePort if provided and service type requires it
+                if (!empty($formData['nodePort'][$key]) && 
+                    isset($formData['type']) && 
+                    in_array($formData['type'], ['NodePort', 'LoadBalancer'])) {
+                    $port['nodePort'] = intval($formData['nodePort'][$key]);
+                }
+                
+                $data['spec']['ports'][] = $port;
+            }
+        }
+        
+        // Add service type if specified
+        if (!empty($formData['type']) && $formData['type'] !== 'Auto') {
+            $data['spec']['type'] = $formData['type'];
+        }
+        
+        // Add external name for ExternalName type services
+        if (!empty($formData['type']) && $formData['type'] === 'ExternalName' && !empty($formData['externalName'])) {
+            $data['spec']['externalName'] = $formData['externalName'];
+        }
+        
+        // Add external traffic policy if specified
+        if (!empty($formData['externalTrafficPolicy']) && $formData['externalTrafficPolicy'] !== 'Auto') {
+            $data['spec']['externalTrafficPolicy'] = $formData['externalTrafficPolicy'];
+        }
+        
+        // Add session affinity if specified
+        if (!empty($formData['sessionAffinity']) && $formData['sessionAffinity'] !== 'Auto') {
+            $data['spec']['sessionAffinity'] = $formData['sessionAffinity'];
+            
+            // Add session affinity timeout if ClientIP affinity is selected
+            if ($formData['sessionAffinity'] === 'ClientIP' && 
+                !empty($formData['sessionAffinityTimeoutSeconds'])) {
+                $data['spec']['sessionAffinityConfig'] = [
+                    'clientIP' => [
+                        'timeoutSeconds' => intval($formData['sessionAffinityTimeoutSeconds'])
+                    ]
+                ];
+            }
+        }
+        
+        return $data;
+    }
+
+    /**
+     * Remove a service
+     * 
+     * @param string $namespace Namespace name
+     * @param string $id Service name
+     * @return RedirectResponse
+     */
+    public function destroy(string $namespace, string $id): RedirectResponse
     {
         try {
-            $client = new Client([
-                'base_uri' => $this->endpoint,
-                'headers' => [
-                    'Authorization' => $this->token,
-                ],
-                'verify' => false,
-                'timeout' => $this->timeout
-            ]);
-    
-            $response = $client->delete("/api/v1/namespaces/$namespace/services/$id");
+            $this->client->delete("/api/v1/namespaces/$namespace/services/$id");
 
-            return redirect()->route('Services.index')->with('success-msg', "Service '$id' was deleted with success");
-        } catch (\GuzzleHttp\Exception\RequestException $e) {
-            
-            $errormsg = $this->treat_error($e->getResponse()->getBody()->getContents());
-            
-            if ($errormsg == null) {
-                return redirect()->back()->withInput()->with('error_msg', $errormsg);
-            }
-
-            return redirect()->back()->withInput()->with('error_msg', $errormsg);
+            return redirect()->route('Services.index')
+                ->with('success-msg', "Service '$id' was deleted successfully");
+        } catch (GuzzleException $e) {
+            Log::error("Error deleting service: " . $e->getMessage());
+            $errorMsg = $this->parseErrorResponse($e);
+            return redirect()->back()->with('error_msg', $errorMsg);
         } catch (\Exception $e) {
-            $errormsg = $this->treat_error($e->getMessage());
-
-            if ($errormsg == null) {
-                $errormsg['message'] = $e->getMessage();
-                $errormsg['status'] = "Internal Server Error";
-                $errormsg['code'] = "500";
-            }
-
-            return redirect()->back()->withInput()->with('error_msg', $errormsg);
+            Log::error("Unexpected error deleting service: " . $e->getMessage());
+            $errorMsg = $this->parseErrorMessage($e->getMessage());
+            return redirect()->back()->with('error_msg', $errorMsg);
         }
     }
 
-    private function treat_error($errorMessage) 
+    /**
+     * Parse error response from GuzzleException
+     * 
+     * @param GuzzleException $e
+     * @return array
+     */
+    private function parseErrorResponse(GuzzleException $e): array
     {
-        $error = null;
+        $error = [
+            'message' => $e->getMessage(),
+            'status' => 'Error',
+            'code' => $e->getCode()
+        ];
+        
+        // Try to extract more detailed error information if available
+        if (method_exists($e, 'getResponse') && $e->getResponse()) {
+            $responseBody = $e->getResponse()->getBody()->getContents();
+            $parsedError = $this->parseErrorMessage($responseBody);
+            
+            if (!empty($parsedError)) {
+                return $parsedError;
+            }
+        }
+        
+        return $error;
+    }
+
+    /**
+     * Parse error message from string
+     * 
+     * @param string $errorMessage
+     * @return array
+     */
+    private function parseErrorMessage(string $errorMessage): array
+    {
+        $error = [
+            'message' => $errorMessage,
+            'status' => 'Internal Server Error',
+            'code' => '500'
+        ];
 
         $jsonData = json_decode($errorMessage, true);
 
-        if (isset($jsonData['message']))
-            $error['message'] = $jsonData['message'];
-        if (isset($jsonData['status']))
-            $error['status'] = $jsonData['status'];
-        if (isset($jsonData['code']))
-            $error['code'] = $jsonData['code'];
-
+        if (json_last_error() === JSON_ERROR_NONE) {
+            if (isset($jsonData['message'])) {
+                $error['message'] = $jsonData['message'];
+            }
+            if (isset($jsonData['status'])) {
+                $error['status'] = $jsonData['status'];
+            }
+            if (isset($jsonData['code'])) {
+                $error['code'] = $jsonData['code'];
+            }
+        }
+        
         return $error;
     }
 }

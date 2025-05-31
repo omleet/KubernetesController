@@ -2,13 +2,31 @@
     <x-slot name="header">
         <div class="flex flex-col">
             <h2 class="text-2xl font-bold text-gray-900">
-                Service: {{ $service['name'] }}
+                Service: {{ $service['name'] ?? 'Details' }}
             </h2>
             <p class="mt-1 text-sm text-gray-500">
                 Detailed information about this Kubernetes service
             </p>
         </div>
     </x-slot>
+
+    <script>
+        // Add loading indicator functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const refreshButtons = document.querySelectorAll('.refresh-btn');
+            
+            refreshButtons.forEach(button => {
+                button.addEventListener('click', function(e) {
+                    // Show loading state on the button
+                    this.classList.add('opacity-75', 'cursor-not-allowed');
+                    this.querySelector('.btn-text').textContent = 'Loading...';
+                    
+                    // Let the link continue its navigation
+                    // The page will refresh with new data
+                });
+            });
+        });
+    </script>
 
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <!-- Action Bar -->
@@ -24,11 +42,11 @@
             </div>
             
             <div class="flex space-x-3">
-                <a href="{{ route('Services.index') }}" class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-200">
+                <a href="{{ route('Services.index') }}" class="refresh-btn inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-200">
                     <svg class="-ml-1 mr-2 h-4 w-4 text-gray-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
                         <path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" />
                     </svg>
-                    Back to Services
+                    <span class="btn-text">Back to Services</span>
                 </a>
                 
                 @if (!preg_match('/^kube-/', $service['namespace']))

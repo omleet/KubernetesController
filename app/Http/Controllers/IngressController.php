@@ -8,172 +8,206 @@ use App\Http\Requests\IngressRequest;
 use App\Models\Cluster;
 use Illuminate\Http\RedirectResponse;
 use GuzzleHttp\Client;
+use GuzzleHttp\Exception\RequestException;
 use Illuminate\View\View;
 use Illuminate\Http\Request;
 
 class IngressController extends Controller
 {
-    private $endpoint;
-    private $token;
-    private $timeout;
+    private string $endpoint;
+    private string $token;
+    private int $timeout;
+    private Client $client;
 
+    /**
+     * Constructor - initialize controller with cluster connection
+     * 
+     * @throws ClusterException
+     * @throws ClusterConnectionException
+     */
     public function __construct()
     {
-        if (!session('clusterId')) 
+        if (!session('clusterId')) {
             throw new ClusterException();
+        }
 
         $cluster = Cluster::findOrFail(session('clusterId'));
 
-        if ($this->checkConnection($cluster) == -1)
+        if ($this->checkConnection($cluster) == -1) {
             throw new ClusterConnectionException();
+        }
 
         $this->endpoint = $cluster['endpoint'];
         $this->token = "Bearer " . $cluster['token'];
-        $this->timeout  = $cluster['timeout'];
-    }
-
-    private function checkConnection($cluster) {
+        $this->timeout = $cluster['timeout'];
         
-        try {
-            if ($cluster['auth_type'] == 'P') {
-                $client = new Client([
-                    'base_uri' => $cluster['endpoint'],
-                    'headers' => [
-                        'Accept' => 'application/json',
-                    ],
-                    'verify' => false,
-                    'timeout' => 0.5
-                ]);     
-            } else {
-                $client = new Client([
-                    'base_uri' => $cluster['endpoint'],
-                    'headers' => [
-                        'Authorization' => "Bearer ". $cluster['token'],
-                        'Accept' => 'application/json',
-                    ],
-                    'verify' => false,
-                    'timeout' => 0.5
-                ]);
-            }
-            $response = $client->get("/api/v1");
-            $online = $response->getStatusCode();
-        } catch (\Exception $e) {
-            $online = -1;
-        }
-
-        return $online;
+        // Initialize the HTTP client once
+        $this->client = new Client([
+            'base_uri' => $this->endpoint,
+            'headers' => [
+                'Authorization' => $this->token,
+                'Accept' => 'application/json',
+            ],
+            'verify' => false,
+            'timeout' => $this->timeout
+        ]);
     }
-    
-    public function index(Request $request): View
+
+    /**
+     * Check if the cluster is reachable
+     * 
+     * @param Cluster $cluster
+     * @return int Status code or -1 if connection failed
+     */
+    private function checkConnection(Cluster $cluster): int
     {
         try {
-            $client = new Client([
-                'base_uri' => $this->endpoint,
+            $clientOptions = [
+                'base_uri' => $cluster['endpoint'],
                 'headers' => [
-                    'Authorization' => $this->token,
                     'Accept' => 'application/json',
                 ],
                 'verify' => false,
-                'timeout' => $this->timeout
-            ]);
-
-            $response = $client->get("/apis/networking.k8s.io/v1/ingresses");
-
-
+                'timeout' => 0.5
+            ];
+            
+            if ($cluster['auth_type'] !== 'P') {
+                $clientOptions['headers']['Authorization'] = "Bearer " . $cluster['token'];
+            }
+            
+            $client = new Client($clientOptions);
+            $response = $client->get("/api/v1");
+            
+            return $response->getStatusCode();
+        } catch (\Exception $e) {
+            return -1;
+        }
+    }
+    
+    /**
+     * Display a listing of ingresses
+     * 
+     * @param Request $request
+     * @return View
+     */
+    public function index(Request $request): View
+    {
+        try {
+            $response = $this->client->get("/apis/networking.k8s.io/v1/ingresses");
             $jsonData = json_decode($response->getBody(), true);
             
-            $ingresses = [];
-            foreach ($jsonData['items'] as $jsonData) {
-                $data['name'] =  $jsonData['metadata']['name'];
-                $data['namespace'] =  $jsonData['metadata']['namespace'];
-                
-                $i=0;
-                $data['services'][$i] = [];
-                foreach ($jsonData['spec']['rules'] as $rules) {
-                    foreach ($rules['http']['paths'] as $path) {
-                        $data['services'][$i]['path'] = $path['path'];
-                        $data['services'][$i]['type'] = $path['pathType'];
-                        
-                        foreach ($path['backend'] as $backend) {
-                            $data['services'][$i]['serviceName'] = $backend['name'];
-                            $data['services'][$i]['port'] = $backend['port']['number'];
-                        }
-                        $i++;
-                    }
-                }
-
-                $data['ingressIP'] = isset($jsonData['status']['loadBalancer']['ingress']) ? $jsonData['status']['loadBalancer']['ingress'] : '-';                
-                $ingresses[] = $data;
+            $ingresses = $this->processIngressesData($jsonData['items']);
+            $namespaceList = $this->extractNamespaces($ingresses, $request->query('showDefault') === "true");
+            
+            // Apply namespace filter if specified
+            if ($request->query('showNamespaceData') && $request->query('showNamespaceData') !== "All") {
+                $ingresses = array_filter($ingresses, function($ingress) use ($request) {
+                    return $ingress['namespace'] === $request->query('showNamespaceData');
+                });
+            }
+            
+            // Filter out kube- namespaces if not showing defaults
+            if ($request->query('showDefault') !== "true") {
+                $ingresses = array_filter($ingresses, function($ingress) {
+                    return !preg_match('/^kube-/', $ingress['namespace']);
+                });
             }
 
-            //FILTERS
-            $namespaceList = [];
-            foreach ($ingresses as $key => $ingress) {
-                if ($request->query('showDefault') != "true") {
-                    if (!preg_match('/^kube-/', $ingress['namespace']))
-                    array_push($namespaceList,$ingress['namespace']);
-                } else {
-                    array_push($namespaceList,$ingress['namespace']);
-                }
-            }
-
-            if ($request->query('showNamespaceData') && $request->query('showNamespaceData') != "All") {
-                foreach ($ingresses as $key => $ingresse) {
-                    if ($ingresse['namespace'] != $request->query('showNamespaceData')) 
-                    {
-                        unset($ingresses[$key]);
-                    }
-                }
-            }
-            $namespaceList = array_unique($namespaceList);
-
-            if ($request->query('showDefault') != "true") {
-                foreach ($ingresses as $key => $ingresse) {
-                    if (preg_match('/^kube-/', $ingresse['namespace'])) 
-                    {
-                        unset($ingresses[$key]);
-                    }
-                }
-            }
-
-            return view('ingresses.index', ['ingresses' => $ingresses, 'namespaceList' => $namespaceList]);
+            return view('ingresses.index', [
+                'ingresses' => array_values($ingresses), // Reset array keys
+                'namespaceList' => $namespaceList
+            ]);
         } catch (\Exception $e) {
             return view('ingresses.index', ['conn_error' => $e->getMessage()]);
         }
     }
 
-    public function show($namespace, $id): View
+    /**
+     * Process raw ingresses data into a structured format
+     * 
+     * @param array $items Raw ingress items from API
+     * @return array Processed ingresses data
+     */
+    private function processIngressesData(array $items): array
+    {
+        $ingresses = [];
+        
+        foreach ($items as $item) {
+            $data = [
+                'name' => $item['metadata']['name'],
+                'namespace' => $item['metadata']['namespace'],
+                'services' => [],
+                'ingressIP' => isset($item['status']['loadBalancer']['ingress']) 
+                    ? $item['status']['loadBalancer']['ingress'] 
+                    : '-'
+            ];
+            
+            if (isset($item['spec']['rules'])) {
+                $serviceIndex = 0;
+                foreach ($item['spec']['rules'] as $rule) {
+                    if (isset($rule['http']['paths'])) {
+                        foreach ($rule['http']['paths'] as $path) {
+                            $serviceData = [
+                                'path' => $path['path'],
+                                'type' => $path['pathType'],
+                            ];
+                            
+                            foreach ($path['backend'] as $backend) {
+                                $serviceData['serviceName'] = $backend['name'];
+                                $serviceData['port'] = $backend['port']['number'];
+                            }
+                            
+                            $data['services'][$serviceIndex] = $serviceData;
+                            $serviceIndex++;
+                        }
+                    }
+                }
+            }
+            
+            $ingresses[] = $data;
+        }
+        
+        return $ingresses;
+    }
+
+    /**
+     * Extract unique namespaces from ingresses
+     * 
+     * @param array $ingresses List of ingresses
+     * @param bool $includeKubeNamespaces Whether to include kube- namespaces
+     * @return array List of unique namespaces
+     */
+    private function extractNamespaces(array $ingresses, bool $includeKubeNamespaces): array
+    {
+        $namespaceList = [];
+        
+        foreach ($ingresses as $ingress) {
+            if ($includeKubeNamespaces || !preg_match('/^kube-/', $ingress['namespace'])) {
+                $namespaceList[] = $ingress['namespace'];
+            }
+        }
+        
+        return array_unique($namespaceList);
+    }
+
+    /**
+     * Display the specified ingress
+     * 
+     * @param string $namespace
+     * @param string $id
+     * @return View
+     */
+    public function show(string $namespace, string $id): View
     {
         try {
-            $client = new Client([
-                'base_uri' => $this->endpoint,
-                'headers' => [
-                    'Authorization' => $this->token,
-                    'Accept' => 'application/json',
-                ],
-                'verify' => false,
-                'timeout' => $this->timeout
-            ]);
-
-            $response = $client->get("/apis/networking.k8s.io/v1/namespaces/$namespace/ingresses/$id");
-
+            $response = $this->client->get("/apis/networking.k8s.io/v1/namespaces/$namespace/ingresses/$id");
             $jsonData = json_decode($response->getBody(), true);
+            
+            // Remove managed fields to clean up the JSON output
             unset($jsonData['metadata']['managedFields']);
             $json = json_encode($jsonData, JSON_PRETTY_PRINT);
             
-            $data = [];
-            // METADATA
-            $data['name'] = isset($jsonData['metadata']['name']) ? $jsonData['metadata']['name'] : '';
-            $data['namespace'] = isset($jsonData['metadata']['namespace']) ? $jsonData['metadata']['namespace'] : '';
-            $data['uid'] = isset($jsonData['metadata']['uid']) ? $jsonData['metadata']['uid'] : '';
-            $data['creationTimestamp'] = isset($jsonData['metadata']['creationTimestamp']) ? $jsonData['metadata']['creationTimestamp'] : '';
-            $data['labels'] = isset($jsonData['metadata']['labels']) ? $jsonData['metadata']['labels'] : null;
-            $data['annotations'] = isset($jsonData['metadata']['annotations']) ? $jsonData['metadata']['annotations'] : null;
-            
-            // SPEC
-            $data['defaultBackendName'] = isset($jsonData['spec']['defaultBackend']['service']['name']) ? $jsonData['spec']['defaultBackend']['service']['name'] : null;
-            $data['defaultBackendPort'] = isset($jsonData['spec']['defaultBackend']['service']['port']['number']) ? $jsonData['spec']['defaultBackend']['service']['port']['number'] : null;
-            $data['rules'] = isset($jsonData['spec']['rules']) ? $jsonData['spec']['rules'] : null;
+            $data = $this->extractIngressDetails($jsonData);
             
             return view('ingresses.show', ['ingress' => $data, 'json' => $json]);
         } catch (\Exception $e) {
@@ -181,157 +215,240 @@ class IngressController extends Controller
         }
     }
     
+    /**
+     * Extract ingress details from API response
+     * 
+     * @param array $jsonData Raw ingress data
+     * @return array Structured ingress details
+     */
+    private function extractIngressDetails(array $jsonData): array
+    {
+        $data = [
+            // METADATA
+            'name' => $jsonData['metadata']['name'] ?? '',
+            'namespace' => $jsonData['metadata']['namespace'] ?? '',
+            'uid' => $jsonData['metadata']['uid'] ?? '',
+            'creationTimestamp' => $jsonData['metadata']['creationTimestamp'] ?? '',
+            'labels' => $jsonData['metadata']['labels'] ?? null,
+            'annotations' => $jsonData['metadata']['annotations'] ?? null,
+            
+            // SPEC
+            'defaultBackendName' => $jsonData['spec']['defaultBackend']['service']['name'] ?? null,
+            'defaultBackendPort' => $jsonData['spec']['defaultBackend']['service']['port']['number'] ?? null,
+            'rules' => $jsonData['spec']['rules'] ?? null,
+        ];
+        
+        return $data;
+    }
+    
+    /**
+     * Show the form for creating a new ingress
+     * 
+     * @return View
+     */
     public function create(): View 
     {
         return view("ingresses.create");
     }
 
+    /**
+     * Store a newly created ingress
+     * 
+     * @param IngressRequest $request
+     * @return RedirectResponse
+     */
     public function store(IngressRequest $request): RedirectResponse
     {
         try {
             $formData = $request->validated();
-            
-            // MAIN INFO
-            $data['apiVersion'] = "networking.k8s.io/v1";
-            $data['kind'] = "Ingress";
-            $data['metadata']['name'] = $formData['name'];
-            $data['metadata']['namespace'] = $formData['namespace'];
-
-            // LABELS & ANNOTATIONS
-            if (isset($formData['key_labels']) && isset($formData['value_labels'])) {
-                foreach ($formData['key_labels'] as $key => $labels) {
-                    $data['metadata']['labels'][$formData['key_labels'][$key]] = $formData['value_labels'][$key];
-                }
-            }
-
-            if (isset($formData['key_annotations']) && isset($formData['value_annotations'])) {
-                foreach ($formData['key_annotations'] as $key => $annotations) {
-                    $data['metadata']['annotations'][$formData['key_annotations'][$key]] = $formData['value_annotations'][$key];
-                }
-            }
-
-            
-            // RULES
-            $rules = [];
-            if (isset($formData['rules'])) {
-                foreach ($formData['rules'] as $key => $rule) {
-                    $arrRule = [];
-                    if (isset($rules['host']))
-                        $rule['host'] = $rules['host'];
-                    
-                    $paths = [];
-                    foreach ($rule['path']['pathName'] as $keyPathName => $pathName) {
-                        $path = [];
-
-                        $path['path'] = $pathName;
-                        $path['pathType'] = $rule['path']['pathType'][$keyPathName];
-                        $path['backend']['service']['name'] = $rule['path']['serviceName'][$keyPathName];
-                        $path['backend']['service']['port']['number'] = intval($rule['path']['portNumber'][$keyPathName]);
-                        $paths[] = $path;
-                    }
-                    
-                    $arrRule['http']['paths'] = $paths;
-                    $rules[] = $arrRule;
-                }
-            }
-            $data['spec']['rules'] = $rules;
-        
-            // EXTRA INFO
-            if (isset($formData['defaultBackendName']) && isset($formData['defaultBackendPort'])) {
-                $data['spec']['defaultBackend']['service']['name'] = $formData['defaultBackendName'];
-                $data['spec']['defaultBackend']['service']['port']['number'] = intval($formData['defaultBackendPort']);
-            }
-
-
-            
+            $data = $this->prepareIngressData($formData);
             $jsonData = json_encode($data);
             
-            $client = new Client([
-                'base_uri' => $this->endpoint,
-                'headers' => [
-                    'Authorization' => $this->token,
-                    'Accept' => 'application/json',
-                ],
-                'body' => $jsonData,
-                'verify' => false,
-                'timeout' => $this->timeout
-            ]);
+            $this->client->post(
+                "/apis/networking.k8s.io/v1/namespaces/{$formData['namespace']}/ingresses",
+                ['body' => $jsonData]
+            );
 
-            $response = $client->post("/apis/networking.k8s.io/v1/namespaces/".$formData['namespace']."/ingresses");
-
-            return redirect()->route('Ingresses.index')->with('success-msg', "Ingress '". $formData['name'] ."' was added with success on Namespace '". $formData['namespace']."'");
-        } catch (\GuzzleHttp\Exception\RequestException $e) {
-            
-            $errormsg = $this->treat_error($e->getResponse()->getBody()->getContents());
-            
-            if ($errormsg == null) {
-                return redirect()->back()->withInput()->with('error_msg', $errormsg);
-            }
-
-            return redirect()->back()->withInput()->with('error_msg', $errormsg);
+            return redirect()
+                ->route('Ingresses.index')
+                ->with('success-msg', "Ingress '{$formData['name']}' was added with success on Namespace '{$formData['namespace']}'");
+        } catch (RequestException $e) {
+            $errorMsg = $this->treatError($e->getResponse()->getBody()->getContents());
+            return $this->handleError($errorMsg);
         } catch (\Exception $e) {
-            $errormsg = $this->treat_error($e->getMessage());
-
-            if ($errormsg == null) {
-                $errormsg['message'] = $e->getMessage();
-                $errormsg['status'] = "Internal Server Error";
-                $errormsg['code'] = "500";
+            $errorMsg = $this->treatError($e->getMessage());
+            
+            if ($errorMsg === null) {
+                $errorMsg = [
+                    'message' => $e->getMessage(),
+                    'status' => "Internal Server Error",
+                    'code' => "500"
+                ];
             }
-
-            return redirect()->back()->withInput()->with('error_msg', $errormsg);
+            
+            return $this->handleError($errorMsg);
         }
     }
+    
+    /**
+     * Prepare ingress data from form input
+     * 
+     * @param array $formData Validated form data
+     * @return array Structured ingress data for API
+     */
+    private function prepareIngressData(array $formData): array
+    {
+        $data = [
+            'apiVersion' => "networking.k8s.io/v1",
+            'kind' => "Ingress",
+            'metadata' => [
+                'name' => $formData['name'],
+                'namespace' => $formData['namespace']
+            ],
+            'spec' => []
+        ];
 
-    public function destroy($namespace, $id) 
+        // Add labels if provided
+        if (isset($formData['key_labels']) && isset($formData['value_labels'])) {
+            $data['metadata']['labels'] = array_combine(
+                $formData['key_labels'],
+                $formData['value_labels']
+            );
+        }
+
+        // Add annotations if provided
+        if (isset($formData['key_annotations']) && isset($formData['value_annotations'])) {
+            $data['metadata']['annotations'] = array_combine(
+                $formData['key_annotations'],
+                $formData['value_annotations']
+            );
+        }
+
+        // Process rules
+        if (isset($formData['rules'])) {
+            $rules = [];
+            foreach ($formData['rules'] as $rule) {
+                $arrRule = [];
+                
+                // Add host if provided
+                if (isset($rule['host'])) {
+                    $arrRule['host'] = $rule['host'];
+                }
+                
+                // Process paths
+                $paths = [];
+                foreach ($rule['path']['pathName'] as $keyPathName => $pathName) {
+                    $paths[] = [
+                        'path' => $pathName,
+                        'pathType' => $rule['path']['pathType'][$keyPathName],
+                        'backend' => [
+                            'service' => [
+                                'name' => $rule['path']['serviceName'][$keyPathName],
+                                'port' => [
+                                    'number' => intval($rule['path']['portNumber'][$keyPathName])
+                                ]
+                            ]
+                        ]
+                    ];
+                }
+                
+                $arrRule['http']['paths'] = $paths;
+                $rules[] = $arrRule;
+            }
+            
+            $data['spec']['rules'] = $rules;
+        }
+        
+        // Add default backend if provided
+        if (isset($formData['defaultBackendName']) && isset($formData['defaultBackendPort'])) {
+            $data['spec']['defaultBackend'] = [
+                'service' => [
+                    'name' => $formData['defaultBackendName'],
+                    'port' => [
+                        'number' => intval($formData['defaultBackendPort'])
+                    ]
+                ]
+            ];
+        }
+        
+        return $data;
+    }
+
+    /**
+     * Remove the specified ingress
+     * 
+     * @param string $namespace
+     * @param string $id
+     * @return RedirectResponse
+     */
+    public function destroy(string $namespace, string $id): RedirectResponse
     {
         try {
-            $client = new Client([
-                'base_uri' => $this->endpoint,
-                'headers' => [
-                    'Authorization' => $this->token,
-                ],
-                'verify' => false,
-                'timeout' => $this->timeout
-            ]);
-    
-            $response = $client->delete("/apis/networking.k8s.io/v1/namespaces/$namespace/ingresses/$id");
+            $this->client->delete("/apis/networking.k8s.io/v1/namespaces/$namespace/ingresses/$id");
 
-            return redirect()->route('Ingresses.index')->with('success-msg', "Ingress '$id' was deleted with success");
-        } catch (\GuzzleHttp\Exception\RequestException $e) {
-            
-            $errormsg = $this->treat_error($e->getResponse()->getBody()->getContents());
-            
-            if ($errormsg == null) {
-                return redirect()->back()->withInput()->with('error_msg', $errormsg);
-            }
-
-            return redirect()->back()->withInput()->with('error_msg', $errormsg);
+            return redirect()
+                ->route('Ingresses.index')
+                ->with('success-msg', "Ingress '$id' was deleted with success");
+        } catch (RequestException $e) {
+            $errorMsg = $this->treatError($e->getResponse()->getBody()->getContents());
+            return $this->handleError($errorMsg);
         } catch (\Exception $e) {
-            $errormsg = $this->treat_error($e->getMessage());
-
-            if ($errormsg == null) {
-                $errormsg['message'] = $e->getMessage();
-                $errormsg['status'] = "Internal Server Error";
-                $errormsg['code'] = "500";
+            $errorMsg = $this->treatError($e->getMessage());
+            
+            if ($errorMsg === null) {
+                $errorMsg = [
+                    'message' => $e->getMessage(),
+                    'status' => "Internal Server Error",
+                    'code' => "500"
+                ];
             }
-
-            return redirect()->back()->withInput()->with('error_msg', $errormsg);
+            
+            return $this->handleError($errorMsg);
         }
     }
 
-    private function treat_error($errorMessage) 
+    /**
+     * Handle error response
+     * 
+     * @param array|null $errorMsg
+     * @return RedirectResponse
+     */
+    private function handleError(?array $errorMsg): RedirectResponse
     {
-        $error = null;
+        return redirect()
+            ->back()
+            ->withInput()
+            ->with('error_msg', $errorMsg);
+    }
 
+    /**
+     * Process error message from API response
+     * 
+     * @param string $errorMessage Raw error message
+     * @return array|null Structured error data
+     */
+    private function treatError(string $errorMessage): ?array
+    {
         $jsonData = json_decode($errorMessage, true);
-
-        if (isset($jsonData['message']))
+        
+        if (!$jsonData) {
+            return null;
+        }
+        
+        $error = [];
+        
+        if (isset($jsonData['message'])) {
             $error['message'] = $jsonData['message'];
-        if (isset($jsonData['status']))
-            $error['status'] = $jsonData['status'] ."(".$jsonData['reason'].")";
-        if (isset($jsonData['code']))
+        }
+        
+        if (isset($jsonData['status'])) {
+            $error['status'] = $jsonData['status'] . (isset($jsonData['reason']) ? "({$jsonData['reason']})" : "");
+        }
+        
+        if (isset($jsonData['code'])) {
             $error['code'] = $jsonData['code'];
-
-        return $error;
+        }
+        
+        return empty($error) ? null : $error;
     }
 }

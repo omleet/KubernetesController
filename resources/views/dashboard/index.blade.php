@@ -49,6 +49,11 @@
                                 <span class="h-2 w-2 rounded-full bg-yellow-400 mr-2"></span>
                                 {{ isset($resources) ? $resources['namespaces'] : 0 }} Namespaces
                             </span>
+                            
+                            <span class="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-indigo-900 bg-opacity-50 text-white">
+                                <span class="h-2 w-2 rounded-full bg-pink-400 mr-2"></span>
+                                {{ isset($resources) ? $resources['ingresses'] : 0 }} Ingresses
+                            </span>
                         </div>
                     </div>
                 </div>

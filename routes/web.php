@@ -103,6 +103,7 @@ Route::middleware('auth')->group(function () {
  * Rotas da Aplicação Principal *
  ******************************/
 
+ //rota pagina inicial para a lista de clusters
 Route::middleware(['auth'])->group(function () {
     //Pagina Inicial
     Route::get('/Clusters', [ClusterController::class, 'index'])->name('Clusters.index');
@@ -113,14 +114,15 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/Dashboard', 'index')->name("Dashboard");
     });
 
+    //rota pagina about
     Route::view('/about', 'about.index')->name('about');
 
-    // Perfil do usuário
+    // Perfil do utilizadores
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
-    // Rotas de usuários
+    // Rotas de utilizadores
     Route::controller(UserController::class)->group(function () {
         Route::get('/User/me', 'editMe')->name("User.me");
         Route::get('/Users', 'index')->name("users_all")->middleware(AdminMiddleware::class);
@@ -130,16 +132,18 @@ Route::middleware(['auth'])->group(function () {
         Route::resource('/User', UserController::class)->except(['index', 'edit', 'update'])->middleware(AdminMiddleware::class);
     });
 
-
+//rotas cluster
     Route::controller(ClusterController::class)->group(function () {
         Route::resource('/Clusters', ClusterController::class);
         Route::get('/Clusters/selectCluster/{device}', 'selectCluster')->name('Clusters.selectCluster');
     });
 
+    //Rotas Nodes
     Route::controller(NodeController::class)->group(function () {
         Route::resource('/Nodes', NodeController::class)->only(['index', 'show']);
     });
 
+    //rotas namespaces
     Route::controller(NamespaceController::class)->group(function () {
         Route::get('/Namespaces', 'index')->name("Namespaces.index");
         Route::get('/Namespaces/New', 'create')->name("Namespaces.create")->middleware(ResourceControlMiddleware::class);
@@ -148,6 +152,7 @@ Route::middleware(['auth'])->group(function () {
         Route::delete('/Namespaces/{namespace}', 'destroy')->name("Namespaces.destroy")->middleware(ResourceControlMiddleware::class);
     });
 
+    //rotas pods
     Route::controller(PodController::class)->group(function () {
         Route::get('/Pods', 'index')->name("Pods.index");
         Route::get('/Pods/New', 'create')->name("Pods.create")->middleware(ResourceControlMiddleware::class);
@@ -156,6 +161,7 @@ Route::middleware(['auth'])->group(function () {
         Route::delete('/Pods/{Namespace}/{Pod}', 'destroy')->name("Pods.destroy")->middleware(ResourceControlMiddleware::class);
     });
 
+    //rotas deployments
     Route::controller(DeploymentController::class)->group(function () {
         Route::get('/Deployments', 'index')->name("Deployments.index");
         Route::get('/Deployments/New', 'create')->name("Deployments.create")->middleware(ResourceControlMiddleware::class);
@@ -164,6 +170,7 @@ Route::middleware(['auth'])->group(function () {
         Route::delete('/Deployments/{Namespace}/{Deployment}', 'destroy')->name("Deployments.destroy")->middleware(ResourceControlMiddleware::class);
     });
 
+    //rotas services
     Route::controller(ServiceController::class)->group(function () {
         Route::get('/Services', 'index')->name("Services.index");
         Route::get('/Services/New', 'create')->name("Services.create")->middleware(ResourceControlMiddleware::class);
@@ -172,6 +179,7 @@ Route::middleware(['auth'])->group(function () {
         Route::delete('/Services/{Namespace}/{Service}', 'destroy')->name("Services.destroy")->middleware(ResourceControlMiddleware::class);
     });
 
+    //rotas ingresses
     Route::controller(IngressController::class)->group(function () {
         Route::get('/Ingresses', 'index')->name("Ingresses.index");
         Route::get('/Ingresses/New', 'create')->name("Ingresses.create")->middleware(ResourceControlMiddleware::class);
@@ -180,14 +188,16 @@ Route::middleware(['auth'])->group(function () {
         Route::delete('/Ingresses/{Namespace}/{Ingress}', 'destroy')->name("Ingresses.destroy")->middleware(ResourceControlMiddleware::class);
     });
 
-    Route::controller(BackupController::class)->group(function () {
-        Route::get('/Backups', 'index')->name("Backups.index")->middleware(ResourceControlMiddleware::class);
-        Route::post('/Backups', 'store')->name("Backups.store")->middleware(ResourceControlMiddleware::class);
+    // Backup routes
+    Route::controller(BackupController::class)->prefix('Backups')->name('Backups.')->middleware(ResourceControlMiddleware::class)->group(function () {
+        Route::get('/', 'index')->name('index');
+        Route::post('/', 'store')->name('store');
     });
 
-    Route::controller(CustomResourceController::class)->group(function () {
-        Route::get('/CustomResources', 'index')->name("CustomResources.index")->middleware(ResourceControlMiddleware::class);
-        Route::post('/CustomResources', 'store')->name("CustomResources.store")->middleware(ResourceControlMiddleware::class);
+    // Custom Resources routes
+    Route::controller(CustomResourceController::class)->prefix('CustomResources')->name('CustomResources.')->middleware(ResourceControlMiddleware::class)->group(function () {
+        Route::get('/', 'index')->name('index');
+        Route::post('/', 'store')->name('store');
     });
 
     Route::fallback(function () {

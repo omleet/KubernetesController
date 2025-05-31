@@ -10,6 +10,24 @@
         </div>
     </x-slot>
 
+    <script>
+        // Add loading indicator functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const refreshButtons = document.querySelectorAll('.refresh-btn');
+            
+            refreshButtons.forEach(button => {
+                button.addEventListener('click', function(e) {
+                    // Show loading state on the button
+                    this.classList.add('opacity-75', 'cursor-not-allowed');
+                    this.querySelector('.btn-text').textContent = 'Loading...';
+                    
+                    // Let the link continue its navigation
+                    // The page will refresh with new data
+                });
+            });
+        });
+    </script>
+
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div class="mb-8">
             <div class="bg-gradient-to-r from-indigo-700 to-purple-700 rounded-2xl shadow-xl overflow-hidden">
@@ -64,12 +82,12 @@
 
             <!-- Action Buttons -->
             <div class="flex space-x-3">
-                <button onclick="location.reload();" type="button" class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-200">
+                <a href="{{ route('Pods.index', request()->query()) }}" class="refresh-btn inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-200">
                     <svg class="-ml-1 mr-2 h-4 w-4 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
-                    Refresh
-                </button>
+                    <span class="btn-text">Refresh</span>
+                </a>
 
                 @if (isset($pods))
                 @if ((Auth::user()->resources == '[*]' || str_contains(Auth::user()->resources,'Pods')) && (Auth::user()->verbs == '[*]' || str_contains(Auth::user()->verbs,'Create')) )
@@ -305,9 +323,12 @@
                             </div>
                             <div class="mt-4">
                                 <div class="-mx-2 -my-1.5 flex">
-                                    <button onclick="location.reload();" type="button" class="bg-red-50 px-2 py-1.5 rounded-md text-sm font-medium text-red-800 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
-                                        Try Again
-                                    </button>
+                                    <a href="{{ route('Pods.index') }}" class="refresh-btn bg-red-50 px-2 py-1.5 rounded-md text-sm font-medium text-red-800 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 inline-flex items-center">
+                                        <svg class="mr-1.5 h-4 w-4 text-red-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                        <span class="btn-text">Try Again</span>
+                                    </a>
                                 </div>
                             </div>
                         </div>

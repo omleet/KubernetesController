@@ -142,18 +142,39 @@
 
                             <!-- Error message display -->
                             @if(session('error_msg'))
-                            <div class="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-                                <h3 class="text-sm font-medium mb-2">Error:</h3>
-                                <p class="text-sm">{{ session('error_msg')['message'] ?? 'An unknown error occurred' }}</p>
-                                @if(isset(session('error_msg')['status']) && isset(session('error_msg')['code']))
-                                <p class="text-xs mt-1 text-red-500">{{ session('error_msg')['status'] }} ({{ session('error_msg')['code'] }})</p>
-                                @endif
+                            <div class="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg" role="alert">
+                                <div class="flex">
+                                    <div class="flex-shrink-0">
+                                        <svg class="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                                        </svg>
+                                    </div>
+                                    <div class="ml-3">
+                                        <h3 class="text-sm font-medium text-red-800">Error:</h3>
+                                        <div class="mt-2 text-sm text-red-700">
+                                            <p>{{ session('error_msg')['message'] ?? 'An unknown error occurred' }}</p>
+                                        </div>
+                                        @if(isset(session('error_msg')['status']) && isset(session('error_msg')['code']))
+                                        <p class="text-xs mt-1 text-red-500">{{ session('error_msg')['status'] }} ({{ session('error_msg')['code'] }})</p>
+                                        @endif
+                                    </div>
+                                </div>
                             </div>
                             @endif
 
                             @if(session('success-msg'))
-                            <div class="mt-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
-                                <p class="text-sm">{{ session('success-msg') }}</p>
+                            <div class="mt-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg" role="alert">
+                                <div class="flex">
+                                    <div class="flex-shrink-0">
+                                        <svg class="h-5 w-5 text-green-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                                        </svg>
+                                    </div>
+                                    <div class="ml-3">
+                                        <p class="text-sm font-medium text-green-800">Success:</p>
+                                        <p class="mt-1 text-sm text-green-700">{{ session('success-msg') }}</p>
+                                    </div>
+                                </div>
                             </div>
                             @endif
                         </form>
@@ -284,44 +305,101 @@
     </div>
 
     <script>
-        // Function to pretty print JSON
+        /**
+         * Pretty print the JSON in the textarea
+         */
         function prettyPrint() {
             const textarea = document.getElementById('resource');
             try {
                 const jsonData = JSON.parse(textarea.value);
                 textarea.value = JSON.stringify(jsonData, null, 2);
+                showToast('JSON formatted successfully', 'success');
             } catch (e) {
-                showNotification('Invalid JSON: ' + e.message, 'error');
+                showToast('Invalid JSON: ' + e.message, 'error');
             }
         }
 
-        // Function to reset the form
+        /**
+         * Reset the form and load a template
+         */
         function resetForm() {
             const textarea = document.getElementById('resource');
             textarea.value = '';
             loadTemplate('pod');
-            showNotification('Form has been reset', 'info');
+            showToast('Form has been reset', 'info');
         }
 
-        // Function to show notification
-        function showNotification(message, type) {
-            // You can implement a toast notification here
-            // For now, we'll use alert
-            if (type === 'error') {
-                alert('Error: ' + message);
-            } else {
-                alert(message);
+        /**
+         * Show a toast notification
+         * 
+         * @param {string} message - The message to display
+         * @param {string} type - The type of notification (success, error, info)
+         */
+        function showToast(message, type) {
+            // Create toast container if it doesn't exist
+            let toastContainer = document.getElementById('toast-container');
+            if (!toastContainer) {
+                toastContainer = document.createElement('div');
+                toastContainer.id = 'toast-container';
+                toastContainer.className = 'fixed bottom-4 right-4 z-50 flex flex-col space-y-2';
+                document.body.appendChild(toastContainer);
             }
+            
+            // Create toast element
+            const toast = document.createElement('div');
+            
+            // Set appropriate styles based on type
+            let bgColor, textColor, icon;
+            switch (type) {
+                case 'success':
+                    bgColor = 'bg-green-50 border-green-200';
+                    textColor = 'text-green-800';
+                    icon = '<svg class="h-5 w-5 text-green-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>';
+                    break;
+                case 'error':
+                    bgColor = 'bg-red-50 border-red-200';
+                    textColor = 'text-red-800';
+                    icon = '<svg class="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" /></svg>';
+                    break;
+                default: // info
+                    bgColor = 'bg-blue-50 border-blue-200';
+                    textColor = 'text-blue-800';
+                    icon = '<svg class="h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" /></svg>';
+            }
+            
+            toast.className = `${bgColor} border rounded-lg shadow-md p-4 mb-3 flex items-center transform transition-all duration-300 ease-in-out translate-x-full opacity-0`;
+            toast.innerHTML = `
+                <div class="flex-shrink-0 mr-3">
+                    ${icon}
+                </div>
+                <div class="${textColor} text-sm font-medium">${message}</div>
+                <button class="ml-auto -mx-1.5 -my-1.5 ${textColor} rounded-lg p-1.5 hover:bg-gray-100 inline-flex h-8 w-8" type="button" aria-label="Close" onclick="this.parentElement.remove()">
+                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                        <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                    </svg>
+                </button>
+            `;
+            
+            // Add to container
+            toastContainer.appendChild(toast);
+            
+            // Animate in
+            setTimeout(() => {
+                toast.classList.remove('translate-x-full', 'opacity-0');
+            }, 10);
+            
+            // Auto remove after 5 seconds
+            setTimeout(() => {
+                toast.classList.add('translate-x-full', 'opacity-0');
+                setTimeout(() => {
+                    toast.remove();
+                }, 300);
+            }, 5000);
         }
 
-        // Function to load template
-        function loadTemplate(type) {
-            const textarea = document.getElementById('resource');
-
-            let template = '';
-
-            if (type === 'pod') {
-                template = `{
+        // Templates for different Kubernetes resources
+        const templates = {
+            pod: `{
   "apiVersion": "v1",
   "kind": "Pod",
   "metadata": {
@@ -354,122 +432,182 @@
       }
     ]
   }
-}`;
-            } else if (type === 'deployment') {
-                template = `{
-    "apiVersion": "apps/v1",
-    "kind": "Deployment",
-    "metadata": {
-        "name": "example-deployment",
+}`,
+            deployment: `{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "name": "example-deployment",
+    "labels": {
+      "app": "example"
+    },
+    "namespace": "default"
+  },
+  "spec": {
+    "replicas": 3,
+    "selector": {
+      "matchLabels": {
+        "app": "example"
+      }
+    },
+    "template": {
+      "metadata": {
         "labels": {
-            "app": "example"
-        },
-        "namespace": "default"
-    },
-    "spec": {
-        "replicas": 3,
-        "selector": {
-            "matchLabels": {
-                "app": "example"
-            }
-        },
-        "template": {
-            "metadata": {
-                "labels": {
-                    "app": "example"
-                }
-            },
-            "spec": {
-                "containers": [
-                    {
-                        "name": "nginx",
-                        "image": "nginx:1.14.2",
-                        "ports": [
-                            {
-                                "containerPort": 80
-                            }
-                        ]
-                    }
-                ]
-            }
+          "app": "example"
         }
-    }
-}`;
-            } else if (type === 'service') {
-                template = `{
-    "apiVersion": "v1",
-    "kind": "Service",
-    "metadata": {
-        "name": "example-service",
-        "namespace": "default"
-    },
-    "spec": {
-        "selector": {
-            "app": "example"
-        },
-        "ports": [
-            {
-                "port": 80,
-                "targetPort": 80
-            }
-        ],
-        "type": "ClusterIP"
-    }
-}`;
-            } else if (type === 'ingress') {
-                template = `{
-    "apiVersion": "networking.k8s.io/v1",
-    "kind": "Ingress",
-    "metadata": {
-        "name": "example-ingress",
-        "namespace": "default"
-    },
-    "spec": {
-        "ingressClassName": "public",
-        "rules": [
-            {
-                "http": {
-                    "paths": [
-                        {
-                            "path": "/api",
-                            "pathType": "Prefix",
-                            "backend": {
-                                "service": {
-                                    "name": "my-service",
-                                    "port": {
-                                        "number": 80
-                                    }
-                                }
-                            }
-                        }
-                    ]
-                }
-            }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "nginx",
+            "image": "nginx:1.14.2",
+            "ports": [
+              {
+                "containerPort": 80
+              }
+            ]
+          }
         ]
+      }
     }
-}`;
-            } else if (type === 'namespace') {
-                template = `{
-    "apiVersion": "v1",
-    "kind": "Namespace",
-    "metadata": {
-        "name": "example-namespace"
-    }
-}`;
+  }
+}`,
+            service: `{
+  "apiVersion": "v1",
+  "kind": "Service",
+  "metadata": {
+    "name": "example-service",
+    "namespace": "default"
+  },
+  "spec": {
+    "selector": {
+      "app": "example"
+    },
+    "ports": [
+      {
+        "port": 80,
+        "targetPort": 80
+      }
+    ],
+    "type": "ClusterIP"
+  }
+}`,
+            ingress: `{
+  "apiVersion": "networking.k8s.io/v1",
+  "kind": "Ingress",
+  "metadata": {
+    "name": "example-ingress",
+    "namespace": "default"
+  },
+  "spec": {
+    "ingressClassName": "public",
+    "rules": [
+      {
+        "http": {
+          "paths": [
+            {
+              "path": "/api",
+              "pathType": "Prefix",
+              "backend": {
+                "service": {
+                  "name": "my-service",
+                  "port": {
+                    "number": 80
+                  }
+                }
+              }
             }
+          ]
+        }
+      }
+    ]
+  }
+}`,
+            namespace: `{
+  "apiVersion": "v1",
+  "kind": "Namespace",
+  "metadata": {
+    "name": "example-namespace"
+  }
+}`
+        };
 
-            textarea.value = template;
-            prettyPrint();
+        /**
+         * Load a template into the editor
+         * 
+         * @param {string} type - The type of template to load
+         */
+        function loadTemplate(type) {
+            const textarea = document.getElementById('resource');
+            
+            if (templates[type]) {
+                textarea.value = templates[type];
+                prettyPrint();
+                showToast(`${type.charAt(0).toUpperCase() + type.slice(1)} template loaded`, 'info');
+            } else {
+                showToast(`Template for ${type} not found`, 'error');
+            }
         }
 
-        // Initialize with example JSON if empty
+        /**
+         * Initialize the page
+         */
         document.addEventListener('DOMContentLoaded', function() {
             const textarea = document.getElementById('resource');
+            
+            // Add syntax highlighting and auto-indentation (optional enhancement)
+            textarea.addEventListener('keydown', function(e) {
+                // Auto-indent when pressing Enter
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    
+                    const cursorPos = this.selectionStart;
+                    const textBeforeCursor = this.value.substring(0, cursorPos);
+                    const textAfterCursor = this.value.substring(cursorPos);
+                    
+                    // Get the indentation of the current line
+                    const currentLine = textBeforeCursor.split('\n').pop();
+                    const indentation = currentLine.match(/^\s*/)[0];
+                    
+                    // Add extra indentation if the line ends with { or [
+                    const extraIndent = /[{[]$/.test(currentLine.trim()) ? '  ' : '';
+                    
+                    // Insert newline with proper indentation
+                    this.value = textBeforeCursor + '\n' + indentation + extraIndent + textAfterCursor;
+                    this.selectionStart = this.selectionEnd = cursorPos + 1 + indentation.length + extraIndent.length;
+                }
+                
+                // Auto-close brackets and quotes
+                const pairs = {
+                    '{': '}',
+                    '[': ']',
+                    '"': '"'
+                };
+                
+                if (pairs[e.key]) {
+                    const cursorPos = this.selectionStart;
+                    const selectedText = this.value.substring(this.selectionStart, this.selectionEnd);
+                    
+                    if (selectedText) {
+                        // Wrap selected text with the pair
+                        e.preventDefault();
+                        const newText = e.key + selectedText + pairs[e.key];
+                        const textBeforeCursor = this.value.substring(0, this.selectionStart);
+                        const textAfterCursor = this.value.substring(this.selectionEnd);
+                        
+                        this.value = textBeforeCursor + newText + textAfterCursor;
+                        this.selectionStart = cursorPos + 1;
+                        this.selectionEnd = cursorPos + 1 + selectedText.length;
+                    }
+                }
+            });
+            
+            // Load default template if textarea is empty
             if (!textarea.value.trim()) {
                 loadTemplate('pod');
             }
 
-            // Prevent double form submission
+            // Form submission handling
             const form = document.querySelector('form');
             const submitBtn = document.getElementById('submitBtn');
 
@@ -480,12 +618,31 @@
                         const jsonContent = textarea.value.trim();
                         if (!jsonContent) {
                             e.preventDefault();
-                            alert('Please enter a valid JSON resource definition.');
+                            showToast('Please enter a valid JSON resource definition.', 'error');
                             return;
                         }
 
                         // Try to parse the JSON to validate it
-                        JSON.parse(jsonContent);
+                        const parsedJson = JSON.parse(jsonContent);
+                        
+                        // Additional validation
+                        if (!parsedJson.kind) {
+                            e.preventDefault();
+                            showToast('Resource must have a "kind" field.', 'error');
+                            return;
+                        }
+                        
+                        if (!parsedJson.apiVersion) {
+                            e.preventDefault();
+                            showToast('Resource must have an "apiVersion" field.', 'error');
+                            return;
+                        }
+                        
+                        if (!parsedJson.metadata || !parsedJson.metadata.name) {
+                            e.preventDefault();
+                            showToast('Resource must have a metadata.name field.', 'error');
+                            return;
+                        }
 
                         // Disable the submit button to prevent double submission
                         submitBtn.disabled = true;
@@ -499,7 +656,7 @@
                         `;
                     } catch (error) {
                         e.preventDefault();
-                        alert('Invalid JSON format: ' + error.message);
+                        showToast('Invalid JSON format: ' + error.message, 'error');
                     }
                 });
             }
