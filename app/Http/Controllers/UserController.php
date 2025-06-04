@@ -62,6 +62,8 @@ class UserController extends Controller
             'email' => $request->email,
             'password' => Hash::make($request->password),
             'admin' => $request->has('admin') ? 1 : 0,
+            'resources' => '[*]',
+            'verbs' => '[*]',
         ]);
 
         return redirect()->route('users_all')->with('success-msg', "User created successfully");

@@ -106,7 +106,7 @@ class ResourceControlMiddleware
             }
         }
 
-        // BACKUPS
+        // CustomResources
         if (str_contains($request->path(),'CustomResources')) {
             if (str_contains(auth()->user()->resources,'CustomResources') || str_contains(auth()->user()->resources,'*')) {
                 return $next($request);

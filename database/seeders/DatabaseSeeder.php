@@ -32,7 +32,7 @@ class DatabaseSeeder extends Seeder
             'admin' => false,
             'blocked' => false,
             'resources' => '[*]',
-            'verbs' => 'get'
+            'verbs' => '[*]'
         ]);
 
         DB::table('clusters')->insert([
